@@ -12,16 +12,15 @@ import com.microsoft.playwright.options.WaitForSelectorState;
 import com.microsoft.playwright.options.WaitUntilState;
 import jakarta.annotation.PreDestroy;
 import org.springframework.stereotype.Service;
-import ru.it_spectrum.ai.playwright.mcp.api.AriaSnapshotResult;
 import ru.it_spectrum.ai.playwright.mcp.api.BrowserContextInfo;
 import ru.it_spectrum.ai.playwright.mcp.api.BrowserContextList;
 import ru.it_spectrum.ai.playwright.mcp.api.BrowserInfo;
 import ru.it_spectrum.ai.playwright.mcp.api.BrowserList;
+import ru.it_spectrum.ai.playwright.mcp.api.ControlSnapshot;
 import ru.it_spectrum.ai.playwright.mcp.api.FormControlInfo;
 import ru.it_spectrum.ai.playwright.mcp.api.FormInfo;
-import ru.it_spectrum.ai.playwright.mcp.api.FormSnapshotResult;
 import ru.it_spectrum.ai.playwright.mcp.api.GridInfo;
-import ru.it_spectrum.ai.playwright.mcp.api.GridSnapshotResult;
+import ru.it_spectrum.ai.playwright.mcp.api.GridSnapshot;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorActionResult;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorCountResult;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorSpec;
@@ -29,6 +28,7 @@ import ru.it_spectrum.ai.playwright.mcp.api.LocatorTextResult;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorWaitResult;
 import ru.it_spectrum.ai.playwright.mcp.api.PageInfo;
 import ru.it_spectrum.ai.playwright.mcp.api.PageList;
+import ru.it_spectrum.ai.playwright.mcp.api.PageSnapshotResult;
 import ru.it_spectrum.ai.playwright.mcp.api.PageNavigationResult;
 import ru.it_spectrum.ai.playwright.mcp.api.WaitResult;
 import ru.it_spectrum.ai.playwright.mcp.config.PlaywrightMcpProperties;
@@ -55,6 +55,12 @@ public class PlaywrightSessionManager {
     private static final int MAX_GRIDS = 10;
     private static final int MAX_GRID_CELL_LENGTH = 200;
     private static final int MAX_TOOLTIP_PROBES = 40;
+    /**
+     * Per-element metadata reads must stay bounded. Locator.evaluate auto-waits for the element to be
+     * attached using the page default timeout (tens of seconds); on a virtualized grid (ag-Grid) the
+     * DOM is full of detached/hidden control elements, so an unbounded wait there stalls for minutes.
+     */
+    private static final int METADATA_TIMEOUT_MS = 1500;
     private static final int TOOLTIP_SHOW_TIMEOUT_MS = 700;
     private static final int TOOLTIP_HOVER_TIMEOUT_MS = 800;
     /** Container selector used by Angular Material / Ant / generic overlay tooltips. */
@@ -331,27 +337,37 @@ public class PlaywrightSessionManager {
         });
     }
 
-    public AriaSnapshotResult ariaSnapshot(String pageId, LocatorSpec locator, Integer timeoutMs) {
+    public PageSnapshotResult pageSnapshot(String pageId, LocatorSpec locator, Boolean includeControls,
+                                           Boolean includeTooltips, Boolean includeGrids,
+                                           Integer maxControls, Integer maxRows, Integer timeoutMs) {
         return dispatcher.call(() -> {
             ManagedPage managed = page(null, pageId);
             LocatorSpec actualLocator = locator != null
                     ? locator
                     : LocatorSpec.css(properties.snapshot().defaultRootSelector());
-            Locator resolved = locators.resolve(managed.page(), actualLocator);
+            Locator root = locators.resolve(managed.page(), actualLocator);
             Locator.AriaSnapshotOptions options = new Locator.AriaSnapshotOptions();
             if (timeoutMs != null && timeoutMs > 0) {
                 options.setTimeout(timeoutMs);
             }
-            return new AriaSnapshotResult(managed.pageId(), actualLocator, timeoutMs,
-                    collapseGrids(resolved.ariaSnapshot(options)));
+            String snapshot = collapseGrids(root.ariaSnapshot(options));
+            ControlSnapshot controls = Boolean.TRUE.equals(includeControls)
+                    ? collectControlSnapshot(managed.page(), root, maxControls,
+                            Boolean.TRUE.equals(includeTooltips), timeoutMs)
+                    : null;
+            GridSnapshot grids = Boolean.TRUE.equals(includeGrids)
+                    ? collectGridSnapshot(root, maxRows, timeoutMs)
+                    : null;
+            return new PageSnapshotResult(managed.pageId(), managed.page().url(), safeTitle(managed.page()),
+                    actualLocator, snapshot, controls, grids);
         });
     }
 
     /**
      * Replace the verbose body of every grid/treegrid node in a Playwright aria snapshot with a one-line
-     * summary that lists column headers and points to {@code pageGridSnapshot} for the rows. Keeps the
-     * snapshot focused on page structure and avoids duplicating (and bloating) the data already available
-     * through {@code pageGridSnapshot}.
+     * summary that lists column headers and points to {@code pageSnapshot} with {@code includeGrids=true}
+     * for the rows. Keeps the structural snapshot focused on page layout and avoids duplicating (and
+     * bloating) the data available through the {@code includeGrids} section.
      */
     static String collapseGrids(String snapshot) {
         if (snapshot == null || snapshot.isBlank()) {
@@ -383,9 +399,9 @@ public class PlaywrightSessionManager {
                 j++;
             }
             String summary = columns.isEmpty()
-                    ? "[rows collapsed - call pageGridSnapshot to read columns and rows]"
+                    ? "[rows collapsed - call pageSnapshot with includeGrids=true to read columns and rows]"
                     : "[" + columns.size() + " column(s): " + String.join(", ", columns)
-                            + " - rows collapsed, call pageGridSnapshot to read rows]";
+                            + " - rows collapsed, call pageSnapshot with includeGrids=true to read rows]";
             appendLine(out, " ".repeat(indent) + "- " + header.group(2) + name + ": " + summary);
             i = j;
         }
@@ -407,35 +423,18 @@ public class PlaywrightSessionManager {
         return count;
     }
 
-    public FormSnapshotResult formSnapshot(String pageId, LocatorSpec locator, Integer maxControls,
-                                           Boolean includeTooltips, Integer timeoutMs) {
-        return dispatcher.call(() -> {
-            ManagedPage managed = page(null, pageId);
-            LocatorSpec actualLocator = locator != null
-                    ? locator
-                    : LocatorSpec.css(properties.snapshot().defaultRootSelector());
-            Locator root = locators.resolve(managed.page(), actualLocator);
-            Locator forms = root.locator("form");
-            int formCount = safeCount(forms);
-            List<FormInfo> formInfos = collectForms(forms, Math.min(formCount, MAX_FORMS));
+    private ControlSnapshot collectControlSnapshot(Page page, Locator root, Integer maxControls,
+                                                   boolean includeTooltips, Integer timeoutMs) {
+        Locator forms = root.locator("form");
+        int formCount = safeCount(forms);
+        List<FormInfo> formInfos = collectForms(forms, Math.min(formCount, MAX_FORMS));
 
-            Locator controls = root.locator(FORM_CONTROL_SELECTOR);
-            int controlCount = safeCount(controls);
-            int limit = Math.min(controlCount, normalizeMaxControls(maxControls));
-            List<FormControlInfo> controlInfos = collectControls(managed.page(), controls, limit,
-                    Boolean.TRUE.equals(includeTooltips), timeoutMs);
+        Locator controls = root.locator(FORM_CONTROL_SELECTOR);
+        int controlCount = safeCount(controls);
+        int limit = Math.min(controlCount, normalizeMaxControls(maxControls));
+        List<FormControlInfo> controlInfos = collectControls(page, controls, limit, includeTooltips, timeoutMs);
 
-            return new FormSnapshotResult(
-                    managed.pageId(),
-                    managed.page().url(),
-                    safeTitle(managed.page()),
-                    actualLocator,
-                    maxControls,
-                    formCount,
-                    controlCount,
-                    formInfos,
-                    controlInfos);
-        });
+        return new ControlSnapshot(maxControls, formCount, controlCount, formInfos, controlInfos);
     }
 
     public LocatorActionResult click(String pageId, LocatorSpec locator, Integer timeoutMs, Boolean force) {
@@ -904,12 +903,18 @@ public class PlaywrightSessionManager {
         int tooltipProbes = 0;
         for (int i = 0; i < limit; i++) {
             Locator control = controls.nth(i);
+            Boolean visible = safeVisible(control, timeoutMs);
+            if (!Boolean.TRUE.equals(visible)) {
+                // Hidden or detached control (common filler in virtualized grids): skip the metadata
+                // read and tooltip hover, which would otherwise stall on attach waits for no value.
+                result.add(hiddenControl(i, visible));
+                continue;
+            }
             Map<String, Object> metadata = safeMetadata(control, CONTROL_METADATA_SCRIPT);
             String accessibleName = stringValue(metadata, "accessibleName");
-            Boolean visible = safeVisible(control, timeoutMs);
             String tooltip = firstNonBlank(stringValue(metadata, "title"), stringValue(metadata, "describedBy"));
             if (tooltip == null && includeTooltips && tooltipProbes < MAX_TOOLTIP_PROBES
-                    && Boolean.TRUE.equals(visible) && needsTooltipProbe(accessibleName)) {
+                    && needsTooltipProbe(accessibleName)) {
                 tooltipProbes++;
                 tooltip = hoverTooltip(page, control);
             }
@@ -931,6 +936,12 @@ public class PlaywrightSessionManager {
                     tooltip));
         }
         return result;
+    }
+
+    /** Minimal record for a hidden/detached control we deliberately did not inspect further. */
+    private FormControlInfo hiddenControl(int index, Boolean visible) {
+        return new FormControlInfo(index, null, null, null, null, null, null, null, null, null,
+                null, visible, null, null, null);
     }
 
     /** Probe only elements whose accessible name is missing or just an icon-font ligature ("account_balance"). */
@@ -984,28 +995,20 @@ public class PlaywrightSessionManager {
         });
     }
 
-    public GridSnapshotResult gridSnapshot(String pageId, LocatorSpec locator, Integer maxRows, Integer timeoutMs) {
-        return dispatcher.call(() -> {
-            ManagedPage managed = page(null, pageId);
-            LocatorSpec actualLocator = locator != null
-                    ? locator
-                    : LocatorSpec.css(properties.snapshot().defaultRootSelector());
-            Locator root = locators.resolve(managed.page(), actualLocator);
-            Locator grids = root.locator(GRID_CONTAINER_SELECTOR);
-            int gridCount = safeCount(grids);
-            int rowLimit = normalizeMaxGridRows(maxRows);
-            Map<String, Object> opts = Map.of(
-                    "maxRows", rowLimit,
-                    "maxCols", MAX_GRID_COLUMNS,
-                    "maxCellLen", MAX_GRID_CELL_LENGTH);
-            List<GridInfo> gridInfos = new ArrayList<>();
-            int limit = Math.min(gridCount, MAX_GRIDS);
-            for (int i = 0; i < limit; i++) {
-                gridInfos.add(extractGrid(grids.nth(i), i, opts, rowLimit, timeoutMs));
-            }
-            return new GridSnapshotResult(managed.pageId(), managed.page().url(), safeTitle(managed.page()),
-                    actualLocator, maxRows, gridCount, gridInfos);
-        });
+    private GridSnapshot collectGridSnapshot(Locator root, Integer maxRows, Integer timeoutMs) {
+        Locator grids = root.locator(GRID_CONTAINER_SELECTOR);
+        int gridCount = safeCount(grids);
+        int rowLimit = normalizeMaxGridRows(maxRows);
+        Map<String, Object> opts = Map.of(
+                "maxRows", rowLimit,
+                "maxCols", MAX_GRID_COLUMNS,
+                "maxCellLen", MAX_GRID_CELL_LENGTH);
+        List<GridInfo> gridInfos = new ArrayList<>();
+        int limit = Math.min(gridCount, MAX_GRIDS);
+        for (int i = 0; i < limit; i++) {
+            gridInfos.add(extractGrid(grids.nth(i), i, opts, rowLimit, timeoutMs));
+        }
+        return new GridSnapshot(maxRows, gridCount, gridInfos);
     }
 
     private GridInfo extractGrid(Locator grid, int index, Map<String, Object> opts, int rowLimit, Integer timeoutMs) {
@@ -1022,7 +1025,8 @@ public class PlaywrightSessionManager {
     @SuppressWarnings("unchecked")
     private Map<String, Object> safeMetadata(Locator locator, String script) {
         try {
-            Object value = locator.evaluate(script);
+            Object value = locator.evaluate(script, null,
+                    new Locator.EvaluateOptions().setTimeout(METADATA_TIMEOUT_MS));
             if (value instanceof Map<?, ?> map) {
                 return (Map<String, Object>) map;
             }

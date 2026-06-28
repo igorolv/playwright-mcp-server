@@ -34,7 +34,7 @@ tool groups.
 | Group | Flag | Tools |
 |---|---|---|
 | Lifecycle | `PLAYWRIGHT_MCP_TOOLS_LIFECYCLE` | `launchBrowser`, `listBrowsers`, `closeBrowser`, `newBrowserContext`, `listBrowserContexts`, `closeBrowserContext`, `newPage`, `listPages`, `closePage` |
-| Page | `PLAYWRIGHT_MCP_TOOLS_PAGE` | `pageNavigate`, `pageReload`, `pageWaitForLoadState`, `pageWaitForLocator`, `pageAriaSnapshot`, `pageFormSnapshot`, `pageGridSnapshot` |
+| Page | `PLAYWRIGHT_MCP_TOOLS_PAGE` | `pageNavigate`, `pageReload`, `pageWaitForLoadState`, `pageWaitForLocator`, `pageSnapshot` |
 | Locator | `PLAYWRIGHT_MCP_TOOLS_LOCATOR` | `locatorClick`, `locatorFill`, `locatorPress`, `locatorHover`, `locatorCheck`, `locatorText`, `locatorCount` |
 
 All groups are enabled by default.
@@ -59,19 +59,23 @@ for `pageNavigate`, then inspect:
 }
 ```
 
-with `pageAriaSnapshot`.
+with `pageSnapshot`.
 
-The three page-inspection tools are complementary, not interchangeable:
+`pageSnapshot` is the single page-inspection tool. By default it returns just the structural overview
+(`snapshot`): headings, landmarks, links, roles, and locator targets, with grids and tables collapsed
+to a one-line summary. Opt into extra sections with flags (each adds tokens and time):
 
-- `pageAriaSnapshot` is the structural overview (headings, landmarks, links, roles, locator targets).
-  Grids and tables are collapsed to a one-line summary; control states are not detailed here.
-- `pageFormSnapshot` lists interactive controls with the detail the snapshot omits: role, type,
-  label/placeholder, enabled/disabled, checked, visible/hidden, and a tooltip. Set
-  `includeTooltips=true` to hover icon buttons that expose only an icon code (e.g. `account_balance`)
-  and capture their real tooltip. Typed field values are not returned.
-- `pageGridSnapshot` reads the rows and columns inside tables and ARIA grids/treegrids (ag-Grid,
-  Angular Material, plain HTML tables). Virtualized grids only keep on-screen rows in the DOM, so
-  `renderedRowCount` may be smaller than the real total.
+- `includeControls=true` adds the `controls` section: interactive controls with the detail the
+  structural snapshot omits — role, type, label/placeholder, enabled/disabled, checked, visible/hidden,
+  and a tooltip. Typed field values are not returned.
+- `includeTooltips=true` (with `includeControls`) additionally hovers icon-only buttons that expose
+  only an icon code (e.g. `account_balance`) and captures their real tooltip.
+- `includeGrids=true` adds the `grids` section: the rows and columns inside tables and ARIA
+  grids/treegrids (ag-Grid, Angular Material, plain HTML tables). Virtualized grids only keep on-screen
+  rows in the DOM, so `renderedRowCount` may be smaller than the real total.
+
+Bound large pages with the `maxControls` and `maxRows` caps, and narrow the read with a root `locator`
+(e.g. `nav`, `aside`, `main`) instead of the default `body`.
 
 After a menu click or filter change in a single-page app, `pageWaitForLoadState` is unreliable; use
 `pageWaitForLocator` (e.g. wait for `role=row` to become `visible`, or for a loading spinner to

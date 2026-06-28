@@ -7,14 +7,14 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.api.io.TempDir;
-import ru.it_spectrum.ai.playwright.mcp.api.AriaSnapshotResult;
+import ru.it_spectrum.ai.playwright.mcp.api.ControlSnapshot;
 import ru.it_spectrum.ai.playwright.mcp.api.FormControlInfo;
 import ru.it_spectrum.ai.playwright.mcp.api.FormInfo;
-import ru.it_spectrum.ai.playwright.mcp.api.FormSnapshotResult;
 import ru.it_spectrum.ai.playwright.mcp.api.GridInfo;
-import ru.it_spectrum.ai.playwright.mcp.api.GridSnapshotResult;
+import ru.it_spectrum.ai.playwright.mcp.api.GridSnapshot;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorActionResult;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorSpec;
+import ru.it_spectrum.ai.playwright.mcp.api.PageSnapshotResult;
 import ru.it_spectrum.ai.playwright.mcp.config.PlaywrightMcpProperties;
 import ru.it_spectrum.ai.playwright.mcp.playwright.PlaywrightDispatcher;
 import ru.it_spectrum.ai.playwright.mcp.playwright.PlaywrightSessionManager;
@@ -63,6 +63,10 @@ class LiveApplicationExplorationTest {
     private static final int ACTION_TIMEOUT_MS = 10_000;
     private static final int PROBE_TIMEOUT_MS = 2_000;
     private static final int SNAPSHOT_TIMEOUT_MS = 15_000;
+    /** Short best-effort wait for async content (grid rows) after a click; grid pages return early. */
+    private static final int CONTENT_SETTLE_TIMEOUT_MS = 3_000;
+    /** Deadline for the Angular shell to bootstrap and render the menu after the Keycloak redirect. */
+    private static final int APP_READY_TIMEOUT_MS = 20_000;
     private static final Pattern ACTIONABLE_LINE =
             Pattern.compile("^\\s*-\\s+(link|menuitem|button)\\s+\"([^\"]{1,160})\".*$");
 
@@ -107,13 +111,13 @@ class LiveApplicationExplorationTest {
     @Test
     void logsInAndExploresVisibleMenuEntries() throws Exception {
         sessions.navigate(null, baseUrl, "domcontentloaded", 60_000);
-        AriaSnapshotResult loginSnapshot = snapshotBody();
+        PageSnapshotResult loginSnapshot = snapshotBody();
 
         LocatorSpec passwordLocator = fillLoginForm(loginSnapshot.snapshot());
         submitLogin(passwordLocator);
         waitAfterAction();
 
-        MenuSnapshot initialMenu = menuSnapshot();
+        MenuSnapshot initialMenu = waitForInitialMenu();
         assertThat(initialMenu.candidates())
                 .as("No menu candidates found after login. Snapshot:\n%s", excerpt(initialMenu.snapshot(), 80))
                 .isNotEmpty();
@@ -197,11 +201,11 @@ class LiveApplicationExplorationTest {
                 LocatorActionResult click = sessions.click(null, locator, ACTION_TIMEOUT_MS, null);
                 waitAfterAction();
                 waitForContentSettle();
-                AriaSnapshotResult snapshot = snapshotBody();
-                FormSnapshotResult forms = formSnapshot();
-                GridSnapshotResult grids = gridSnapshot();
+                PageSnapshotResult snapshot = describeSnapshot();
+                ControlSnapshot controls = snapshot.controls();
+                GridSnapshot grids = snapshot.grids();
                 return new PageVisit(candidate, click.url(), click.title(),
-                        describe(snapshot.snapshot(), forms, grids), formInventory(forms),
+                        describe(snapshot.snapshot(), controls, grids), formInventory(controls),
                         gridInventory(grids), null);
             } catch (RuntimeException e) {
                 lastError = e;
@@ -211,19 +215,43 @@ class LiveApplicationExplorationTest {
         return new PageVisit(candidate, null, null, null, null, null, error);
     }
 
-    /** After a SPA menu click, networkidle is unreliable; wait for grid rows (or any grid) to render. */
+    /**
+     * After a SPA menu click, networkidle never settles, so wait on visible content instead: grid rows.
+     * On a grid page the header row appears almost immediately and this returns early; on a grid-less
+     * page it costs the (small) ceiling. Grid data is re-read later in pageSnapshot regardless.
+     */
     private void waitForContentSettle() {
+        waitVisibleQuietly(role("row", null, false), CONTENT_SETTLE_TIMEOUT_MS);
+    }
+
+    private void waitVisibleQuietly(LocatorSpec locator, int timeoutMs) {
         try {
-            sessions.waitForLocator(null, role("row", null, false), "visible", 8_000);
+            sessions.waitForLocator(null, locator, "visible", timeoutMs);
         } catch (RuntimeException ignored) {
         }
+    }
+
+    /**
+     * Poll the menu until candidates appear or the readiness deadline passes. Replaces a blind
+     * post-login wait: the Angular shell renders the nav asynchronously after the Keycloak redirect,
+     * so we keep looking (as an explorer would) instead of guessing a fixed delay. Returns fast once
+     * the menu is up; the per-attempt cost is just the menuRoots probe timeouts.
+     */
+    private MenuSnapshot waitForInitialMenu() {
+        long deadline = System.currentTimeMillis() + APP_READY_TIMEOUT_MS;
+        MenuSnapshot menu = menuSnapshot();
+        while (menu.candidates().isEmpty() && System.currentTimeMillis() < deadline) {
+            menu = menuSnapshot();
+        }
+        return menu;
     }
 
     private MenuSnapshot menuSnapshot() {
         RuntimeException lastError = null;
         for (LocatorSpec root : menuRoots()) {
             try {
-                AriaSnapshotResult snapshot = sessions.ariaSnapshot(null, root, PROBE_TIMEOUT_MS);
+                PageSnapshotResult snapshot = sessions.pageSnapshot(null, root, null, null, null, null, null,
+                        PROBE_TIMEOUT_MS);
                 List<MenuCandidate> candidates = extractMenuCandidates(snapshot.snapshot());
                 if (!candidates.isEmpty()) {
                     return new MenuSnapshot(root, snapshot.snapshot(), candidates);
@@ -233,7 +261,7 @@ class LiveApplicationExplorationTest {
             }
         }
         try {
-            AriaSnapshotResult body = snapshotBody();
+            PageSnapshotResult body = snapshotBody();
             return new MenuSnapshot(css("body"), body.snapshot(), extractMenuCandidates(body.snapshot()));
         } catch (RuntimeException e) {
             if (lastError != null) {
@@ -267,71 +295,39 @@ class LiveApplicationExplorationTest {
         }
     }
 
+    // The app authenticates through a standard Keycloak login page (realm asv), so target its known
+    // field ids first and keep only a couple of generic fallbacks. This mimics an LLM that, seeing the
+    // login form, tries the obvious candidates instead of a long speculative sweep.
     private List<LocatorSpec> usernameLocators() {
         return List.of(
-                label("Email"),
-                label("E-mail"),
-                label("Login"),
-                label("Username"),
-                label("User"),
-                label("Логин"),
-                label("Пользователь"),
-                label("Имя пользователя"),
-                placeholder("Email"),
-                placeholder("E-mail"),
-                placeholder("Login"),
-                placeholder("Username"),
-                placeholder("Логин"),
-                placeholder("Пользователь"),
-                role("textbox", "Email", false),
-                role("textbox", "Login", false),
-                role("textbox", "Username", false),
-                role("textbox", "Логин", false),
-                css("input[type='email']"),
-                css("input[name='email']"),
+                css("#username"),
                 css("input[name='username']"),
-                css("input[name='login']"),
-                css("input[id*='email' i]"),
-                css("input[id*='login' i]"),
                 css("input[type='text']", 0)
         );
     }
 
     private List<LocatorSpec> passwordLocators() {
         return List.of(
-                label("Password"),
-                label("Пароль"),
-                placeholder("Password"),
-                placeholder("Пароль"),
-                css("input[type='password']"),
+                css("#password"),
                 css("input[name='password']"),
-                css("input[id*='password' i]")
+                css("input[type='password']")
         );
     }
 
     private List<LocatorSpec> loginButtonLocators() {
         return List.of(
-                role("button", "Sign in", false),
-                role("button", "Login", false),
-                role("button", "Submit", false),
-                role("button", "Войти", false),
-                role("button", "Вход", false),
+                css("#kc-login"),
                 css("button[type='submit']"),
-                css("input[type='submit']"),
-                css("button", 0)
+                css("input[type='submit']")
         );
     }
 
+    // The SSJ toolbar icon buttons are anonymous in the accessibility tree (names live only in their
+    // matTooltip), so they never become menu candidates - which means scanning the whole body already
+    // yields just the real menu entries. We tried scoping to a nav container (mat-sidenav, role=navigation,
+    // ...) but none matched this app, and each miss cost a probe timeout, so body is both correct and fast.
     private List<LocatorSpec> menuRoots() {
         return List.of(
-                role("navigation", null, false),
-                css("nav"),
-                css("aside"),
-                css("[role='navigation']"),
-                css(".ant-menu"),
-                css(".MuiDrawer-root"),
-                css(".sidebar"),
-                css(".menu"),
                 css("body")
         );
     }
@@ -340,26 +336,24 @@ class LiveApplicationExplorationTest {
         return List.of(
                 role(candidate.role(), candidate.name(), true),
                 role(candidate.role(), candidate.name(), false),
-                text(candidate.name(), true),
                 text(candidate.name(), false)
         );
     }
 
-    private AriaSnapshotResult snapshotBody() {
-        return sessions.ariaSnapshot(null, css("body"), SNAPSHOT_TIMEOUT_MS);
+    private PageSnapshotResult snapshotBody() {
+        return sessions.pageSnapshot(null, css("body"), null, null, null, null, null, SNAPSHOT_TIMEOUT_MS);
     }
 
-    private FormSnapshotResult formSnapshot() {
-        return sessions.formSnapshot(null, css("body"), 120, true, PROBE_TIMEOUT_MS);
-    }
-
-    private GridSnapshotResult gridSnapshot() {
-        return sessions.gridSnapshot(null, css("body"), 25, PROBE_TIMEOUT_MS);
+    /** Full inspection of the current page: structure plus control states (with tooltips) and grid rows. */
+    private PageSnapshotResult describeSnapshot() {
+        return sessions.pageSnapshot(null, css("body"), true, true, true, 120, 25, PROBE_TIMEOUT_MS);
     }
 
     private void waitAfterAction() {
+        // Only the load-document wait is meaningful (covers the real post-login redirect); it is instant
+        // for in-app SPA clicks. networkidle is deliberately omitted - it never settles on this SPA and
+        // would just burn its full timeout on every action. Async content is handled by waitForContentSettle.
         waitQuietly("domcontentloaded", 5_000);
-        waitQuietly("networkidle", 10_000);
     }
 
     private void waitQuietly(String state, int timeoutMs) {
@@ -369,7 +363,7 @@ class LiveApplicationExplorationTest {
         }
     }
 
-    private String describe(String snapshot, FormSnapshotResult forms, GridSnapshotResult grids) {
+    private String describe(String snapshot, ControlSnapshot forms, GridSnapshot grids) {
         List<String> headings = roleNames(snapshot, "heading", 6);
         List<String> links = roleNames(snapshot, "link", 6);
         List<String> buttons = buttonLabels(forms, 10);
@@ -414,7 +408,7 @@ class LiveApplicationExplorationTest {
     }
 
     /** Buttons described by their accessible name, falling back to the hover tooltip for icon-only buttons. */
-    private List<String> buttonLabels(FormSnapshotResult forms, int limit) {
+    private List<String> buttonLabels(ControlSnapshot forms, int limit) {
         return forms.controls().stream()
                 .filter(control -> "button".equals(controlKind(control)))
                 .filter(control -> Boolean.TRUE.equals(control.visible()))
@@ -438,7 +432,7 @@ class LiveApplicationExplorationTest {
         return hasText(name) ? name : tooltip;
     }
 
-    private String gridInventory(GridSnapshotResult grids) {
+    private String gridInventory(GridSnapshot grids) {
         if (grids.gridCount() == 0) {
             return "No tables or grids detected.";
         }
@@ -459,7 +453,7 @@ class LiveApplicationExplorationTest {
         return inventory.toString().trim();
     }
 
-    private List<String> controlsByKind(FormSnapshotResult forms, String kind, int limit) {
+    private List<String> controlsByKind(ControlSnapshot forms, String kind, int limit) {
         return forms.controls().stream()
                 .filter(control -> kind.equals(controlKind(control)))
                 .filter(control -> Boolean.TRUE.equals(control.visible()))
@@ -470,7 +464,7 @@ class LiveApplicationExplorationTest {
                 .toList();
     }
 
-    private String formInventory(FormSnapshotResult forms) {
+    private String formInventory(ControlSnapshot forms) {
         StringBuilder inventory = new StringBuilder();
         inventory.append("Forms detected: ").append(forms.formCount())
                 .append("; controls detected: ").append(forms.controlCount()).append('\n');

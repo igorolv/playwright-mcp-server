@@ -25,7 +25,7 @@ public class PlaywrightLocatorTools {
     }
 
     @McpTool(
-            description = "Click an element. Use pageAriaSnapshot first, then prefer role/name, text, label, or testId locators; use css/xpath as fallback. For menu exploration, click link, menuitem, or navigation button names from the snapshot, then wait if needed and call pageAriaSnapshot again.",
+            description = "Click an element. Use pageSnapshot first, then prefer role/name, text, label, or testId locators; use css/xpath as fallback. For menu exploration, click link, menuitem, or navigation button names from the snapshot, then wait if needed and call pageSnapshot again.",
             generateOutputSchema = true,
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, idempotentHint = false)
     )

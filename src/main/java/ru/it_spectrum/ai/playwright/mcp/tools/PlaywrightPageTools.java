@@ -6,12 +6,10 @@ import org.springframework.ai.mcp.annotation.McpTool;
 import org.springframework.ai.mcp.annotation.McpToolParam;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
-import ru.it_spectrum.ai.playwright.mcp.api.AriaSnapshotResult;
-import ru.it_spectrum.ai.playwright.mcp.api.FormSnapshotResult;
-import ru.it_spectrum.ai.playwright.mcp.api.GridSnapshotResult;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorSpec;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorWaitResult;
 import ru.it_spectrum.ai.playwright.mcp.api.PageNavigationResult;
+import ru.it_spectrum.ai.playwright.mcp.api.PageSnapshotResult;
 import ru.it_spectrum.ai.playwright.mcp.api.WaitResult;
 import ru.it_spectrum.ai.playwright.mcp.playwright.PlaywrightSessionManager;
 
@@ -28,7 +26,7 @@ public class PlaywrightPageTools {
     }
 
     @McpTool(
-            description = "Open a URL in a browser tab. Use this as the first step for live site work, then call pageAriaSnapshot to inspect the page and choose locators. Omitted ids use the default browser, isolated context, and tab; they are created automatically.",
+            description = "Open a URL in a browser tab. Use this as the first step for live site work, then call pageSnapshot to inspect the page and choose locators. Omitted ids use the default browser, isolated context, and tab; they are created automatically.",
             generateOutputSchema = true,
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, idempotentHint = false)
     )
@@ -95,54 +93,36 @@ public class PlaywrightPageTools {
     }
 
     @McpTool(
-            description = "Inspect the current page STRUCTURE as a compact accessibility YAML snapshot: headings, landmarks, links, text, and roles, plus the locator targets to act on. Call this first after navigation, login, and every menu click to orient yourself, then choose stable locators by role, name, text, label, or test id. Grids and tables are collapsed to a one-line summary here - call pageGridSnapshot to read their rows. For control states and labels (enabled/disabled, checked, placeholder, and icon-button tooltips) call pageFormSnapshot instead of re-reading them here. Default root is body; pass a root locator such as nav, aside, or main when the full page is too large.",
+            description = "Inspect the current page. Returns a compact accessibility YAML snapshot of the page STRUCTURE (headings, landmarks, links, text, roles) plus the locator targets to act on - call this first after navigation, login, and every menu click to orient yourself, then choose stable locators by role, name, text, label, or test id. Grids and tables are collapsed to a one-line summary by default. Opt into extra detail with flags (each adds tokens and time): set includeControls=true for the interactive CONTROLS and their states (role, type, label/placeholder, enabled/disabled, checked, visible/hidden, tooltip; typed-in values are not returned); also set includeTooltips=true to hover icon-only buttons that show just an icon code (e.g. account_balance) and capture their real tooltip; set includeGrids=true to read the rows and columns inside tables and ARIA grids/treegrids (ag-Grid, Angular Material; virtualized grids keep only on-screen rows in the DOM, so renderedRowCount may be less than the real total). Default root is body; pass a root locator such as nav, aside, or main when the full page is too large, and use maxControls/maxRows to bound the response.",
             generateOutputSchema = true,
             annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true)
     )
-    public AriaSnapshotResult pageAriaSnapshot(
+    public PageSnapshotResult pageSnapshot(
             @McpToolParam(description = "Logical browser tab id", required = false) String pageId,
-            @McpToolParam(description = "Snapshot root locator. Supported kinds: css, xpath, role, text, label, placeholder, altText, title, testId.", required = false) LocatorSpec locator,
-            @McpToolParam(description = "Snapshot timeout in milliseconds", required = false) Integer timeoutMs
+            @McpToolParam(description = "Snapshot root locator. Supported kinds: css, xpath, role, text, label, placeholder, altText, title, testId. Default body.", required = false) LocatorSpec locator,
+            @McpToolParam(description = "When true, also return the interactive controls (inputs, selects, buttons, checkboxes, radios, switches) with their states and labels.", required = false) Boolean includeControls,
+            @McpToolParam(description = "When true (and includeControls is true), hover icon-only/nameless controls to capture their hover tooltip text. Slower; use when buttons show only icon codes such as account_balance.", required = false) Boolean includeTooltips,
+            @McpToolParam(description = "When true, also return the rows and columns inside tables and ARIA grids/treegrids.", required = false) Boolean includeGrids,
+            @McpToolParam(description = "Maximum number of controls to return when includeControls is true. Default 80; server caps larger values.", required = false) Integer maxControls,
+            @McpToolParam(description = "Maximum rendered rows per grid to return when includeGrids is true. Default 50; server caps larger values.", required = false) Integer maxRows,
+            @McpToolParam(description = "Timeout in milliseconds for the snapshot and visibility/enabled checks", required = false) Integer timeoutMs
     ) {
-        log.info("Tool call: pageAriaSnapshot (pageId={}, locator={})", pageId, locator);
+        log.info("Tool call: pageSnapshot (pageId={}, locator={}, includeControls={}, includeTooltips={}, includeGrids={})",
+                pageId, locator, includeControls, includeTooltips, includeGrids);
         long start = System.nanoTime();
         try {
-            AriaSnapshotResult result = sessions.ariaSnapshot(pageId, locator, timeoutMs);
-            ToolLogger.completed(log, "pageAriaSnapshot", start);
+            PageSnapshotResult result = sessions.pageSnapshot(pageId, locator, includeControls, includeTooltips,
+                    includeGrids, maxControls, maxRows, timeoutMs);
+            ToolLogger.completed(log, "pageSnapshot", start);
             return result;
         } catch (RuntimeException e) {
-            ToolLogger.failed(log, "pageAriaSnapshot", start, e.getMessage());
+            ToolLogger.failed(log, "pageSnapshot", start, e.getMessage());
             throw e;
         }
     }
 
     @McpTool(
-            description = "List the interactive CONTROLS on the page with their states - the detail pageAriaSnapshot does not carry. Use this after pageAriaSnapshot when you need to act on or describe inputs, selects, textareas, buttons, checkboxes, radios, and switches: returns role, type, label/placeholder, enabled/disabled, checked, visible/hidden, and a tooltip. Set includeTooltips=true to hover icon buttons that show only an icon code (e.g. account_balance) and capture their real tooltip. Values typed into fields are not returned. Default root is body; use maxControls to keep responses small.",
-            generateOutputSchema = true,
-            annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true)
-    )
-    public FormSnapshotResult pageFormSnapshot(
-            @McpToolParam(description = "Logical browser tab id", required = false) String pageId,
-            @McpToolParam(description = "Root locator for the form/control inventory. Supported kinds: css, xpath, role, text, label, placeholder, altText, title, testId.", required = false) LocatorSpec locator,
-            @McpToolParam(description = "Maximum number of controls to return. Default 80; server caps larger values.", required = false) Integer maxControls,
-            @McpToolParam(description = "When true, hover icon buttons and other nameless/icon-ligature controls to capture their hover tooltip text. Slower; use when buttons show only icon codes such as account_balance.", required = false) Boolean includeTooltips,
-            @McpToolParam(description = "Timeout in milliseconds for visibility/enabled checks", required = false) Integer timeoutMs
-    ) {
-        log.info("Tool call: pageFormSnapshot (pageId={}, locator={}, maxControls={}, includeTooltips={})",
-                pageId, locator, maxControls, includeTooltips);
-        long start = System.nanoTime();
-        try {
-            FormSnapshotResult result = sessions.formSnapshot(pageId, locator, maxControls, includeTooltips, timeoutMs);
-            ToolLogger.completed(log, "pageFormSnapshot", start);
-            return result;
-        } catch (RuntimeException e) {
-            ToolLogger.failed(log, "pageFormSnapshot", start, e.getMessage());
-            throw e;
-        }
-    }
-
-    @McpTool(
-            description = "Wait until an element reaches a state: visible, hidden, attached, or detached. Use after a menu click or filter change to let asynchronous content settle before pageAriaSnapshot, e.g. wait for role=row to become visible, or for a loading spinner to become hidden. Returns found=false instead of throwing when the state is not reached before the timeout.",
+            description = "Wait until an element reaches a state: visible, hidden, attached, or detached. Use after a menu click or filter change to let asynchronous content settle before pageSnapshot, e.g. wait for role=row to become visible, or for a loading spinner to become hidden. Returns found=false instead of throwing when the state is not reached before the timeout.",
             generateOutputSchema = true,
             annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = false)
     )
@@ -164,26 +144,4 @@ public class PlaywrightPageTools {
         }
     }
 
-    @McpTool(
-            description = "Read the DATA inside tables and grids as structured rows and columns. Use this whenever pageAriaSnapshot shows a collapsed grid/table summary and you need its contents: covers HTML tables and ARIA grids/treegrids such as ag-Grid or Angular Material tables. Returns column headers and rendered row cells. Note: virtualized grids keep only on-screen rows in the DOM, so renderedRowCount may be less than the real total. Default root is body; use maxRows to bound the response.",
-            generateOutputSchema = true,
-            annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true)
-    )
-    public GridSnapshotResult pageGridSnapshot(
-            @McpToolParam(description = "Logical browser tab id", required = false) String pageId,
-            @McpToolParam(description = "Root locator to search for grids/tables. Supported kinds: css, xpath, role, text, label, placeholder, altText, title, testId.", required = false) LocatorSpec locator,
-            @McpToolParam(description = "Maximum rendered rows per grid to return. Default 50; server caps larger values.", required = false) Integer maxRows,
-            @McpToolParam(description = "Timeout in milliseconds to wait for a grid to be attached before reading", required = false) Integer timeoutMs
-    ) {
-        log.info("Tool call: pageGridSnapshot (pageId={}, locator={}, maxRows={})", pageId, locator, maxRows);
-        long start = System.nanoTime();
-        try {
-            GridSnapshotResult result = sessions.gridSnapshot(pageId, locator, maxRows, timeoutMs);
-            ToolLogger.completed(log, "pageGridSnapshot", start);
-            return result;
-        } catch (RuntimeException e) {
-            ToolLogger.failed(log, "pageGridSnapshot", start, e.getMessage());
-            throw e;
-        }
-    }
 }

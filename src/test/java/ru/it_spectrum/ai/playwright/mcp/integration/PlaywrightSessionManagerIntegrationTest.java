@@ -59,7 +59,7 @@ class PlaywrightSessionManagerIntegrationTest {
     void navigatesAndReturnsAriaSnapshot() {
         try {
             var navigation = sessions.navigate(null, site.url("/index.html"), "domcontentloaded", null);
-            var snapshot = sessions.ariaSnapshot(null, LocatorSpec.css("body"), null);
+            var snapshot = sessions.pageSnapshot(null, LocatorSpec.css("body"), null, null, null, null, null, null);
 
             assertThat(navigation.status()).isEqualTo(200);
             assertThat(navigation.title()).isEqualTo("Playwright MCP Test Site");

@@ -94,6 +94,10 @@ tasks.register<Test>("liveApplicationTest") {
     }
     outputs.upToDateWhen { false }
     shouldRunAfter(tasks.test)
+    testLogging {
+        showStandardStreams = true
+        events("passed", "failed", "skipped")
+    }
 }
 
 tasks.register<JavaExec>("installPlaywrightBrowsers") {

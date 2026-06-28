@@ -28,7 +28,7 @@ class AriaGridCollapseTest {
 
         assertThat(collapsed.lines()).containsExactly(
                 "- heading \"Каталог\" [level=3]",
-                "- grid: [2 column(s): ID, Название - rows collapsed, call pageGridSnapshot to read rows]",
+                "- grid: [2 column(s): ID, Название - rows collapsed, call pageSnapshot with includeGrids=true to read rows]",
                 "- contentinfo: © 2026");
         assertThat(collapsed).doesNotContain("gridcell", "rowgroup", "Альфа");
     }
@@ -44,7 +44,7 @@ class AriaGridCollapseTest {
         String collapsed = PlaywrightSessionManager.collapseGrids(snapshot);
 
         assertThat(collapsed.lines()).containsExactly(
-                "- treegrid \"Дерево\": [rows collapsed - call pageGridSnapshot to read columns and rows]",
+                "- treegrid \"Дерево\": [rows collapsed - call pageSnapshot with includeGrids=true to read columns and rows]",
                 "- button \"ОК\"");
     }
 
