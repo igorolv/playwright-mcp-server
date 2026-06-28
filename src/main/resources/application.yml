@@ -1,0 +1,40 @@
+spring:
+  main:
+    web-application-type: none
+    banner-mode: off
+  ai:
+    mcp:
+      server:
+        name: playwright-mcp-server
+        version: 0.1.0
+        stdio: true
+
+playwright-mcp:
+  data-dir: ${PLAYWRIGHT_MCP_DATA_DIR:${user.home}/.playwright-mcp-server}
+  tools:
+    lifecycle: ${PLAYWRIGHT_MCP_TOOLS_LIFECYCLE:true}
+    page: ${PLAYWRIGHT_MCP_TOOLS_PAGE:true}
+    locator: ${PLAYWRIGHT_MCP_TOOLS_LOCATOR:true}
+  browser:
+    browser-name: ${PLAYWRIGHT_MCP_BROWSER:chromium}
+    channel: ${PLAYWRIGHT_MCP_CHANNEL:}
+    executable-path: ${PLAYWRIGHT_MCP_EXECUTABLE:}
+    headless: ${PLAYWRIGHT_MCP_HEADLESS:true}
+    slow-mo-ms: ${PLAYWRIGHT_MCP_SLOW_MO_MS:0}
+  context:
+    viewport-width: ${PLAYWRIGHT_MCP_VIEWPORT_WIDTH:1440}
+    viewport-height: ${PLAYWRIGHT_MCP_VIEWPORT_HEIGHT:1000}
+    user-agent: ${PLAYWRIGHT_MCP_USER_AGENT:}
+    locale: ${PLAYWRIGHT_MCP_LOCALE:}
+    timezone-id: ${PLAYWRIGHT_MCP_TIMEZONE_ID:}
+    ignore-https-errors: ${PLAYWRIGHT_MCP_IGNORE_HTTPS_ERRORS:false}
+  sessions:
+    default-browser-id: ${PLAYWRIGHT_MCP_DEFAULT_BROWSER_ID:default}
+    default-context-id: ${PLAYWRIGHT_MCP_DEFAULT_CONTEXT_ID:default}
+    default-page-id: ${PLAYWRIGHT_MCP_DEFAULT_PAGE_ID:default}
+    max-browsers: ${PLAYWRIGHT_MCP_MAX_BROWSERS:2}
+    max-contexts: ${PLAYWRIGHT_MCP_MAX_CONTEXTS:8}
+    max-pages: ${PLAYWRIGHT_MCP_MAX_PAGES:16}
+    default-timeout-ms: ${PLAYWRIGHT_MCP_DEFAULT_TIMEOUT_MS:30000}
+  snapshot:
+    default-root-selector: ${PLAYWRIGHT_MCP_SNAPSHOT_ROOT_SELECTOR:body}
