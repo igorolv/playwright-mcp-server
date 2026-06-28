@@ -34,7 +34,7 @@ tool groups.
 | Group | Flag | Tools |
 |---|---|---|
 | Lifecycle | `PLAYWRIGHT_MCP_TOOLS_LIFECYCLE` | `launchBrowser`, `listBrowsers`, `closeBrowser`, `newBrowserContext`, `listBrowserContexts`, `closeBrowserContext`, `newPage`, `listPages`, `closePage` |
-| Page | `PLAYWRIGHT_MCP_TOOLS_PAGE` | `pageNavigate`, `pageReload`, `pageWaitForLoadState`, `pageAriaSnapshot` |
+| Page | `PLAYWRIGHT_MCP_TOOLS_PAGE` | `pageNavigate`, `pageReload`, `pageWaitForLoadState`, `pageWaitForLocator`, `pageAriaSnapshot`, `pageFormSnapshot`, `pageGridSnapshot` |
 | Locator | `PLAYWRIGHT_MCP_TOOLS_LOCATOR` | `locatorClick`, `locatorFill`, `locatorPress`, `locatorHover`, `locatorCheck`, `locatorText`, `locatorCount` |
 
 All groups are enabled by default.
@@ -60,6 +60,22 @@ for `pageNavigate`, then inspect:
 ```
 
 with `pageAriaSnapshot`.
+
+The three page-inspection tools are complementary, not interchangeable:
+
+- `pageAriaSnapshot` is the structural overview (headings, landmarks, links, roles, locator targets).
+  Grids and tables are collapsed to a one-line summary; control states are not detailed here.
+- `pageFormSnapshot` lists interactive controls with the detail the snapshot omits: role, type,
+  label/placeholder, enabled/disabled, checked, visible/hidden, and a tooltip. Set
+  `includeTooltips=true` to hover icon buttons that expose only an icon code (e.g. `account_balance`)
+  and capture their real tooltip. Typed field values are not returned.
+- `pageGridSnapshot` reads the rows and columns inside tables and ARIA grids/treegrids (ag-Grid,
+  Angular Material, plain HTML tables). Virtualized grids only keep on-screen rows in the DOM, so
+  `renderedRowCount` may be smaller than the real total.
+
+After a menu click or filter change in a single-page app, `pageWaitForLoadState` is unreliable; use
+`pageWaitForLocator` (e.g. wait for `role=row` to become `visible`, or for a loading spinner to
+become `hidden`) before snapshotting so asynchronous content has settled.
 
 ## Locator Object
 
@@ -121,6 +137,23 @@ Integration and smoke checks:
 `integrationTest` runs against an in-process local HTTP site and a real headless Chromium. It uses
 `PLAYWRIGHT_MCP_EXECUTABLE`, local Chrome/Edge, or an already-installed Playwright Chromium cache.
 If none is available, the test is skipped before Playwright is started.
+
+Manual live application exploration:
+
+```powershell
+$env:LIVE_APPLICATION_URL="<application-url>"
+$env:LIVE_APPLICATION_USERNAME="<username>"
+$env:LIVE_APPLICATION_PASSWORD="<password>"
+.\gradlew.bat liveApplicationTest
+```
+
+`liveApplicationTest` is excluded from `test`, `build`, `integrationTest`, and `smokeTest`. It is a
+manual live smoke/exploration check: it opens the configured application URL, logs in with the
+configured credentials, opens discovered menu entries, captures compact accessibility snapshots,
+and writes `build/reports/live-application/report.md` with page and form descriptions. Required env
+vars are `LIVE_APPLICATION_URL`, `LIVE_APPLICATION_USERNAME`, and `LIVE_APPLICATION_PASSWORD`; the
+test is skipped when any of them is missing. Optional env vars: `LIVE_APPLICATION_HEADLESS` (default
+`true`) and `LIVE_APPLICATION_MAX_MENU_ITEMS` (default `30`).
 
 ## Configuration
 
