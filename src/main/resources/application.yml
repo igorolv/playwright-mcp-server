@@ -14,6 +14,7 @@ playwright-mcp:
   tools:
     page: ${PLAYWRIGHT_MCP_TOOLS_PAGE:true}
     locator: ${PLAYWRIGHT_MCP_TOOLS_LOCATOR:true}
+    screenshot: ${PLAYWRIGHT_MCP_TOOLS_SCREENSHOT:true}
   browser:
     browser-name: ${PLAYWRIGHT_MCP_BROWSER:chromium}
     channel: ${PLAYWRIGHT_MCP_CHANNEL:}

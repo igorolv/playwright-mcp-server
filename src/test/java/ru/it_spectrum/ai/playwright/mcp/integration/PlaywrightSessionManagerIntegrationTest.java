@@ -14,6 +14,7 @@ import ru.it_spectrum.ai.playwright.mcp.testsupport.BrowserExecutableSupport;
 import ru.it_spectrum.ai.playwright.mcp.testsupport.LocalTestSite;
 import ru.it_spectrum.ai.playwright.mcp.testsupport.TestProperties;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -64,6 +65,24 @@ class PlaywrightSessionManagerIntegrationTest {
             assertThat(navigation.status()).isEqualTo(200);
             assertThat(navigation.title()).isEqualTo("Playwright MCP Test Site");
             assertThat(snapshot.snapshot()).contains("Playwright MCP Test Site", "Form page", "Say hello");
+        } catch (PlaywrightException e) {
+            abortWhenBrowserIsMissing(e);
+            throw e;
+        }
+    }
+
+    @Test
+    void capturesScreenshotToDataDir() throws Exception {
+        try {
+            sessions.navigate(site.url("/index.html"), "domcontentloaded", null);
+
+            var screenshot = sessions.pageScreenshot(false, "home page", null);
+
+            assertThat(screenshot.url()).isEqualTo(site.url("/index.html"));
+            assertThat(screenshot.path()).endsWith(".png");
+            assertThat(screenshot.relativePath()).startsWith("screenshots");
+            assertThat(screenshot.sizeBytes()).isGreaterThan(0);
+            assertThat(Files.isRegularFile(Path.of(screenshot.path()))).isTrue();
         } catch (PlaywrightException e) {
             abortWhenBrowserIsMissing(e);
             throw e;

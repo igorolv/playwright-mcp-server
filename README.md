@@ -24,8 +24,7 @@ contract:
 - locator strategies: `role`, `text`, `label`, `placeholder`, `altText`, `title`, `testId`, `css`, `xpath`
 
 Host-side arbitrary code execution is intentionally not included. Page JavaScript evaluation,
-storage state, network routing, tracing, screenshots, downloads, and PDF can be added as separate
-tool groups.
+storage state, network routing, tracing, downloads, and PDF can be added as separate tool groups.
 
 ## Tools
 
@@ -33,8 +32,9 @@ tool groups.
 |---|---|---|
 | Page | `PLAYWRIGHT_MCP_TOOLS_PAGE` | `pageNavigate`, `pageWaitForLocator`, `pageSnapshot` |
 | Locator | `PLAYWRIGHT_MCP_TOOLS_LOCATOR` | `locatorClick`, `locatorFill`, `locatorPress`, `locatorCheck` |
+| Screenshot | `PLAYWRIGHT_MCP_TOOLS_SCREENSHOT` | `pageScreenshot` |
 
-Both groups are enabled by default.
+All groups are enabled by default.
 
 `pageNavigate` lazily creates the server-managed default `Browser`, `BrowserContext`, and `Page`, so
 a client can start with:
@@ -77,6 +77,11 @@ Bound large pages with the `maxControls` and `maxRows` caps, and narrow the read
 After a menu click or filter change in a single-page app, use `pageWaitForLocator` (e.g. wait for
 `role=row` to become `visible`, or for a loading spinner to become `hidden`) before snapshotting so
 asynchronous content has settled.
+
+`pageScreenshot` captures the current browser page as a PNG file under
+`${playwright-mcp.data-dir}/screenshots`. It returns the absolute and relative file paths plus page
+metadata; it does not return image bytes in the MCP response. Use it for documentation, bug reports,
+and step-by-step evidence.
 
 ## Locator Object
 
@@ -168,6 +173,7 @@ The server is stdio-only.
 | `PLAYWRIGHT_MCP_EXECUTABLE` | empty |
 | `PLAYWRIGHT_MCP_HEADLESS` | `true` |
 | `PLAYWRIGHT_MCP_SLOW_MO_MS` | `0` |
+| `PLAYWRIGHT_MCP_TOOLS_SCREENSHOT` | `true` |
 | `PLAYWRIGHT_MCP_VIEWPORT_WIDTH` | `1440` |
 | `PLAYWRIGHT_MCP_VIEWPORT_HEIGHT` | `1000` |
 | `PLAYWRIGHT_MCP_DEFAULT_TIMEOUT_MS` | `30000` |

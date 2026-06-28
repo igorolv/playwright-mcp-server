@@ -81,6 +81,7 @@ class McpStdioSmokeTest {
                             "pageNavigate",
                             "pageSnapshot",
                             "pageWaitForLocator",
+                            "pageScreenshot",
                             "locatorClick",
                             "locatorFill",
                             "locatorPress",

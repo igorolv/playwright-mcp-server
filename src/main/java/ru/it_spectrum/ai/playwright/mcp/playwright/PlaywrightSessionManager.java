@@ -7,6 +7,7 @@ import com.microsoft.playwright.Locator;
 import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.Response;
+import com.microsoft.playwright.options.ScreenshotType;
 import com.microsoft.playwright.options.WaitForSelectorState;
 import com.microsoft.playwright.options.WaitUntilState;
 import jakarta.annotation.PreDestroy;
@@ -19,12 +20,16 @@ import ru.it_spectrum.ai.playwright.mcp.api.GridSnapshot;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorActionResult;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorSpec;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorWaitResult;
+import ru.it_spectrum.ai.playwright.mcp.api.PageScreenshotResult;
 import ru.it_spectrum.ai.playwright.mcp.api.PageSnapshotResult;
 import ru.it_spectrum.ai.playwright.mcp.api.PageNavigationResult;
 import ru.it_spectrum.ai.playwright.mcp.config.PlaywrightMcpProperties;
 
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -64,6 +69,8 @@ public class PlaywrightSessionManager {
     /** A {@code - columnheader "name"} line nested under a grid. */
     private static final Pattern ARIA_COLUMNHEADER =
             Pattern.compile("^\\s*-\\s+columnheader\\s+\"([^\"]*)\".*$");
+    private static final DateTimeFormatter SCREENSHOT_TIMESTAMP =
+            DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS").withZone(ZoneOffset.UTC);
     private static final String GRID_EXTRACT_SCRIPT = """
             (el, opts) => {
               const clip = value => {
@@ -222,6 +229,33 @@ public class PlaywrightSessionManager {
                     : null;
             return new PageSnapshotResult(managed.page().url(), safeTitle(managed.page()),
                     actualLocator, snapshot, controls, grids);
+        });
+    }
+
+    public PageScreenshotResult pageScreenshot(Boolean fullPage, String name, Integer timeoutMs) {
+        return dispatcher.call(() -> {
+            ManagedPage managed = page(null, null);
+            Path root = properties.resolvedDataDir();
+            Path directory = root.resolve("screenshots");
+            Files.createDirectories(directory);
+            Path path = uniqueScreenshotPath(directory.resolve(screenshotFileName(name))).toAbsolutePath().normalize();
+
+            Page.ScreenshotOptions options = new Page.ScreenshotOptions()
+                    .setPath(path)
+                    .setType(ScreenshotType.PNG)
+                    .setFullPage(Boolean.TRUE.equals(fullPage));
+            if (timeoutMs != null && timeoutMs > 0) {
+                options.setTimeout(timeoutMs);
+            }
+            managed.page().screenshot(options);
+
+            return new PageScreenshotResult(
+                    managed.page().url(),
+                    safeTitle(managed.page()),
+                    path.toString(),
+                    root.relativize(path).toString(),
+                    Boolean.TRUE.equals(fullPage),
+                    Files.size(path));
         });
     }
 
@@ -556,6 +590,50 @@ public class PlaywrightSessionManager {
         } catch (RuntimeException e) {
             return null;
         }
+    }
+
+    private Path uniqueScreenshotPath(Path path) {
+        if (!Files.exists(path)) {
+            return path;
+        }
+        String fileName = path.getFileName().toString();
+        String baseName = fileName.endsWith(".png") ? fileName.substring(0, fileName.length() - 4) : fileName;
+        for (int i = 2; i < 1_000; i++) {
+            Path candidate = path.resolveSibling(baseName + "-" + i + ".png");
+            if (!Files.exists(candidate)) {
+                return candidate;
+            }
+        }
+        return path.resolveSibling(baseName + "-" + System.nanoTime() + ".png");
+    }
+
+    private String screenshotFileName(String name) {
+        String timestamp = SCREENSHOT_TIMESTAMP.format(Instant.now());
+        String slug = screenshotSlug(name);
+        return slug == null ? timestamp + ".png" : timestamp + "-" + slug + ".png";
+    }
+
+    private String screenshotSlug(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        StringBuilder out = new StringBuilder();
+        boolean previousDash = false;
+        for (int i = 0; i < value.length() && out.length() < 80; i++) {
+            char ch = Character.toLowerCase(value.charAt(i));
+            boolean alphanumeric = (ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9');
+            if (alphanumeric) {
+                out.append(ch);
+                previousDash = false;
+            } else if (!previousDash && !out.isEmpty()) {
+                out.append('-');
+                previousDash = true;
+            }
+        }
+        while (!out.isEmpty() && out.charAt(out.length() - 1) == '-') {
+            out.setLength(out.length() - 1);
+        }
+        return out.isEmpty() ? null : out.toString();
     }
 
     private Boolean safeVisible(Locator locator, Integer timeoutMs) {
