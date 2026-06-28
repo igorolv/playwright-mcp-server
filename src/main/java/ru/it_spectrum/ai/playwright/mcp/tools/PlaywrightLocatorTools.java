@@ -25,7 +25,7 @@ public class PlaywrightLocatorTools {
     }
 
     @McpTool(
-            description = "Click an element. Use pageAriaSnapshot first, then prefer role/name, text, label, or testId locators; use css/xpath as fallback.",
+            description = "Click an element. Use pageAriaSnapshot first, then prefer role/name, text, label, or testId locators; use css/xpath as fallback. For menu exploration, click link, menuitem, or navigation button names from the snapshot, then wait if needed and call pageAriaSnapshot again.",
             generateOutputSchema = true,
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, idempotentHint = false)
     )
@@ -48,7 +48,7 @@ public class PlaywrightLocatorTools {
     }
 
     @McpTool(
-            description = "Fill an editable element with text. Prefer label, placeholder, textbox role, or testId locators.",
+            description = "Fill an editable element with text. Prefer label, placeholder, textbox role, or testId locators; for password fields use label/placeholder or css such as input[type='password'] when no accessible role is exposed.",
             generateOutputSchema = true,
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, idempotentHint = false)
     )

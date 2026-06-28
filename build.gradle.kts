@@ -40,7 +40,7 @@ tasks.withType<JavaCompile> {
 
 tasks.test {
     useJUnitPlatform {
-        excludeTags("integration", "smoke")
+        excludeTags("integration", "smoke", "live-application")
     }
 }
 
@@ -66,6 +66,34 @@ tasks.register<Test>("smokeTest") {
     description = "Runs packaged MCP stdio smoke tests"
     shouldRunAfter(tasks.test)
     dependsOn(tasks.bootJar)
+}
+
+tasks.register<Test>("liveApplicationTest") {
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    useJUnitPlatform {
+        includeTags("live-application")
+    }
+    group = "verification"
+    description = "Runs manual live UI exploration against a web application. Requires " +
+            "LIVE_APPLICATION_URL / LIVE_APPLICATION_USERNAME / LIVE_APPLICATION_PASSWORD env vars; " +
+            "tests are skipped when unset."
+    listOf(
+        "LIVE_APPLICATION_URL",
+        "LIVE_APPLICATION_USERNAME",
+        "LIVE_APPLICATION_PASSWORD",
+        "LIVE_APPLICATION_HEADLESS",
+        "LIVE_APPLICATION_MAX_MENU_ITEMS",
+        "PLAYWRIGHT_MCP_EXECUTABLE",
+        "PLAYWRIGHT_CHROMIUM_EXECUTABLE",
+        "CHROME_PATH",
+        "CHROMIUM_PATH",
+        "EDGE_PATH"
+    ).forEach { key ->
+        System.getenv(key)?.let { environment(key, it) }
+    }
+    outputs.upToDateWhen { false }
+    shouldRunAfter(tasks.test)
 }
 
 tasks.register<JavaExec>("installPlaywrightBrowsers") {
