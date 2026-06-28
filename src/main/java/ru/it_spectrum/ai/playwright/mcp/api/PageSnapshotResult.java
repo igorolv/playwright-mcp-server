@@ -9,7 +9,6 @@ package ru.it_spectrum.ai.playwright.mcp.api;
  * keeping the response small for a quick structural read.
  */
 public record PageSnapshotResult(
-        String pageId,
         String url,
         String title,
         LocatorSpec locator,

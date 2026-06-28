@@ -10,7 +10,6 @@ import ru.it_spectrum.ai.playwright.mcp.api.LocatorSpec;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorWaitResult;
 import ru.it_spectrum.ai.playwright.mcp.api.PageNavigationResult;
 import ru.it_spectrum.ai.playwright.mcp.api.PageSnapshotResult;
-import ru.it_spectrum.ai.playwright.mcp.api.WaitResult;
 import ru.it_spectrum.ai.playwright.mcp.playwright.PlaywrightSessionManager;
 
 @Service
@@ -26,68 +25,23 @@ public class PlaywrightPageTools {
     }
 
     @McpTool(
-            description = "Open a URL in a browser tab. Use this as the first step for live site work, then call pageSnapshot to inspect the page and choose locators. Omitted ids use the default browser, isolated context, and tab; they are created automatically.",
+            description = "Open a URL in the browser. Use this as the first step for live site work, then call pageSnapshot to inspect the page and choose locators. The server creates and reuses one default browser session automatically.",
             generateOutputSchema = true,
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, idempotentHint = false)
     )
     public PageNavigationResult pageNavigate(
-            @McpToolParam(description = "Logical browser tab id", required = false) String pageId,
             @McpToolParam(description = "Absolute URL or URL relative to the context baseUrl") String url,
             @McpToolParam(description = "Navigation wait condition: load, domcontentloaded, networkidle, or commit. Default domcontentloaded.", required = false) String waitUntil,
             @McpToolParam(description = "Navigation timeout in milliseconds", required = false) Integer timeoutMs
     ) {
-        log.info("Tool call: pageNavigate (pageId={}, url={}, waitUntil={})", pageId, url, waitUntil);
+        log.info("Tool call: pageNavigate (url={}, waitUntil={})", url, waitUntil);
         long start = System.nanoTime();
         try {
-            PageNavigationResult result = sessions.navigate(pageId, url, waitUntil, timeoutMs);
+            PageNavigationResult result = sessions.navigate(url, waitUntil, timeoutMs);
             ToolLogger.completed(log, "pageNavigate", start);
             return result;
         } catch (RuntimeException e) {
             ToolLogger.failed(log, "pageNavigate", start, e.getMessage());
-            throw e;
-        }
-    }
-
-    @McpTool(
-            description = "Reload the current browser tab.",
-            generateOutputSchema = true,
-            annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, idempotentHint = false)
-    )
-    public PageNavigationResult pageReload(
-            @McpToolParam(description = "Logical browser tab id", required = false) String pageId,
-            @McpToolParam(description = "Navigation wait condition: load, domcontentloaded, networkidle, or commit. Default domcontentloaded.", required = false) String waitUntil,
-            @McpToolParam(description = "Reload timeout in milliseconds", required = false) Integer timeoutMs
-    ) {
-        log.info("Tool call: pageReload (pageId={}, waitUntil={})", pageId, waitUntil);
-        long start = System.nanoTime();
-        try {
-            PageNavigationResult result = sessions.reload(pageId, waitUntil, timeoutMs);
-            ToolLogger.completed(log, "pageReload", start);
-            return result;
-        } catch (RuntimeException e) {
-            ToolLogger.failed(log, "pageReload", start, e.getMessage());
-            throw e;
-        }
-    }
-
-    @McpTool(
-            description = "Wait until the current browser tab reaches a load state. Use after actions that trigger navigation or dynamic loading.",
-            generateOutputSchema = true,
-            annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = false)
-    )
-    public WaitResult pageWaitForLoadState(
-            @McpToolParam(description = "Logical browser tab id", required = false) String pageId,
-            @McpToolParam(description = "Load state: load, domcontentloaded, or networkidle. Default domcontentloaded.", required = false) String state,
-            @McpToolParam(description = "Wait timeout in milliseconds", required = false) Integer timeoutMs
-    ) {
-        log.info("Tool call: pageWaitForLoadState (pageId={}, state={})", pageId, state);
-        long start = System.nanoTime();
-        try {
-            WaitResult result = sessions.waitForLoadState(pageId, state, timeoutMs);
-            ToolLogger.completed(log, "pageWaitForLoadState", start);
-            return result;
-        } catch (RuntimeException e) {
-            ToolLogger.failed(log, "pageWaitForLoadState", start, e.getMessage());
             throw e;
         }
     }
@@ -98,7 +52,6 @@ public class PlaywrightPageTools {
             annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true)
     )
     public PageSnapshotResult pageSnapshot(
-            @McpToolParam(description = "Logical browser tab id", required = false) String pageId,
             @McpToolParam(description = "Snapshot root locator. Supported kinds: css, xpath, role, text, label, placeholder, altText, title, testId. Default body.", required = false) LocatorSpec locator,
             @McpToolParam(description = "When true, also return the interactive controls (inputs, selects, buttons, checkboxes, radios, switches) with their states and labels.", required = false) Boolean includeControls,
             @McpToolParam(description = "When true (and includeControls is true), hover icon-only/nameless controls to capture their hover tooltip text. Slower; use when buttons show only icon codes such as account_balance.", required = false) Boolean includeTooltips,
@@ -107,11 +60,11 @@ public class PlaywrightPageTools {
             @McpToolParam(description = "Maximum rendered rows per grid to return when includeGrids is true. Default 50; server caps larger values.", required = false) Integer maxRows,
             @McpToolParam(description = "Timeout in milliseconds for the snapshot and visibility/enabled checks", required = false) Integer timeoutMs
     ) {
-        log.info("Tool call: pageSnapshot (pageId={}, locator={}, includeControls={}, includeTooltips={}, includeGrids={})",
-                pageId, locator, includeControls, includeTooltips, includeGrids);
+        log.info("Tool call: pageSnapshot (locator={}, includeControls={}, includeTooltips={}, includeGrids={})",
+                locator, includeControls, includeTooltips, includeGrids);
         long start = System.nanoTime();
         try {
-            PageSnapshotResult result = sessions.pageSnapshot(pageId, locator, includeControls, includeTooltips,
+            PageSnapshotResult result = sessions.pageSnapshot(locator, includeControls, includeTooltips,
                     includeGrids, maxControls, maxRows, timeoutMs);
             ToolLogger.completed(log, "pageSnapshot", start);
             return result;
@@ -127,15 +80,14 @@ public class PlaywrightPageTools {
             annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = false)
     )
     public LocatorWaitResult pageWaitForLocator(
-            @McpToolParam(description = "Logical browser tab id", required = false) String pageId,
             @McpToolParam(description = "Element locator to wait for") LocatorSpec locator,
             @McpToolParam(description = "Target state: visible, hidden, attached, or detached. Default visible.", required = false) String state,
             @McpToolParam(description = "Wait timeout in milliseconds", required = false) Integer timeoutMs
     ) {
-        log.info("Tool call: pageWaitForLocator (pageId={}, locator={}, state={})", pageId, locator, state);
+        log.info("Tool call: pageWaitForLocator (locator={}, state={})", locator, state);
         long start = System.nanoTime();
         try {
-            LocatorWaitResult result = sessions.waitForLocator(pageId, locator, state, timeoutMs);
+            LocatorWaitResult result = sessions.waitForLocator(locator, state, timeoutMs);
             ToolLogger.completed(log, "pageWaitForLocator", start);
             return result;
         } catch (RuntimeException e) {

@@ -12,7 +12,6 @@ spring:
 playwright-mcp:
   data-dir: ${PLAYWRIGHT_MCP_DATA_DIR:${user.home}/.playwright-mcp-server}
   tools:
-    lifecycle: ${PLAYWRIGHT_MCP_TOOLS_LIFECYCLE:true}
     page: ${PLAYWRIGHT_MCP_TOOLS_PAGE:true}
     locator: ${PLAYWRIGHT_MCP_TOOLS_LOCATOR:true}
   browser:

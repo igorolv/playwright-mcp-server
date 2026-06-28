@@ -1,14 +1,11 @@
 package ru.it_spectrum.ai.playwright.mcp.tools;
 
 import org.junit.jupiter.api.Test;
-import ru.it_spectrum.ai.playwright.mcp.api.BrowserInfo;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorActionResult;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorSpec;
 import ru.it_spectrum.ai.playwright.mcp.api.PageNavigationResult;
 import ru.it_spectrum.ai.playwright.mcp.api.PageSnapshotResult;
 import ru.it_spectrum.ai.playwright.mcp.playwright.PlaywrightSessionManager;
-
-import java.time.Instant;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
@@ -18,33 +15,28 @@ import static org.mockito.Mockito.when;
 class PlaywrightToolsUnitTest {
 
     @Test
-    void lifecyclePageAndLocatorToolsDelegateToSessionManager() {
+    void pageAndLocatorToolsDelegateToSessionManager() {
         PlaywrightSessionManager sessions = mock(PlaywrightSessionManager.class);
         LocatorSpec button = new LocatorSpec("role", null, "button", "Save", true, null, null, null, null);
-        BrowserInfo browser = new BrowserInfo("default", "chromium", null, true, true, Instant.now());
-        PageNavigationResult navigation = new PageNavigationResult("default", "http://example.test", "Example", 200, "OK", true);
-        LocatorActionResult click = new LocatorActionResult("default", "click", button, "http://example.test", "Example");
+        PageNavigationResult navigation = new PageNavigationResult("http://example.test", "Example", 200, "OK", true);
+        LocatorActionResult click = new LocatorActionResult("click", button, "http://example.test", "Example");
         LocatorSpec body = LocatorSpec.css("body");
-        PageSnapshotResult snapshot = new PageSnapshotResult("default", "http://example.test", "Example",
+        PageSnapshotResult snapshot = new PageSnapshotResult("http://example.test", "Example",
                 body, "- heading \"Example\"", null, null);
 
-        when(sessions.launchBrowser(null, null, null, null, null, null)).thenReturn(browser);
-        when(sessions.navigate(null, "http://example.test", null, null)).thenReturn(navigation);
-        when(sessions.pageSnapshot(null, body, true, null, null, 20, null, null)).thenReturn(snapshot);
-        when(sessions.click(null, button, null, null)).thenReturn(click);
+        when(sessions.navigate("http://example.test", null, null)).thenReturn(navigation);
+        when(sessions.pageSnapshot(body, true, null, null, 20, null, null)).thenReturn(snapshot);
+        when(sessions.click(button, null, null)).thenReturn(click);
 
-        PlaywrightLifecycleTools lifecycleTools = new PlaywrightLifecycleTools(sessions);
         PlaywrightPageTools pageTools = new PlaywrightPageTools(sessions);
         PlaywrightLocatorTools locatorTools = new PlaywrightLocatorTools(sessions);
 
-        assertThat(lifecycleTools.launchBrowser(null, null, null, null, null, null)).isSameAs(browser);
-        assertThat(pageTools.pageNavigate(null, "http://example.test", null, null)).isSameAs(navigation);
-        assertThat(pageTools.pageSnapshot(null, body, true, null, null, 20, null, null)).isSameAs(snapshot);
-        assertThat(locatorTools.locatorClick(null, button, null, null)).isSameAs(click);
+        assertThat(pageTools.pageNavigate("http://example.test", null, null)).isSameAs(navigation);
+        assertThat(pageTools.pageSnapshot(body, true, null, null, 20, null, null)).isSameAs(snapshot);
+        assertThat(locatorTools.locatorClick(button, null, null)).isSameAs(click);
 
-        verify(sessions).launchBrowser(null, null, null, null, null, null);
-        verify(sessions).navigate(null, "http://example.test", null, null);
-        verify(sessions).pageSnapshot(null, body, true, null, null, 20, null, null);
-        verify(sessions).click(null, button, null, null);
+        verify(sessions).navigate("http://example.test", null, null);
+        verify(sessions).pageSnapshot(body, true, null, null, 20, null, null);
+        verify(sessions).click(button, null, null);
     }
 }

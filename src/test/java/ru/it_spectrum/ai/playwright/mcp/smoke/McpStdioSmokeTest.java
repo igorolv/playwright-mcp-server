@@ -76,9 +76,19 @@ class McpStdioSmokeTest {
             Map<String, Object> result = (Map<String, Object>) response.get("result");
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> tools = (List<Map<String, Object>>) result.get("tools");
+            assertThat(tools).extracting(tool -> tool.get("name"))
+                    .containsExactlyInAnyOrder(
+                            "pageNavigate",
+                            "pageSnapshot",
+                            "pageWaitForLocator",
+                            "locatorClick",
+                            "locatorFill",
+                            "locatorPress",
+                            "locatorCheck");
 
             String toolsJson = mapper.writeValueAsString(tools);
             assertThat(toolsJson)
+                    .doesNotContain("pageId")
                     .doesNotContain("Playwright")
                     .doesNotContain("BrowserType")
                     .doesNotContain("LocatorSpec")

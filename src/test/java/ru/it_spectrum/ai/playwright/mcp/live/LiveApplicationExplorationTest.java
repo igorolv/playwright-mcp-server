@@ -110,12 +110,11 @@ class LiveApplicationExplorationTest {
 
     @Test
     void logsInAndExploresVisibleMenuEntries() throws Exception {
-        sessions.navigate(null, baseUrl, "domcontentloaded", 60_000);
+        sessions.navigate(baseUrl, "domcontentloaded", 60_000);
         PageSnapshotResult loginSnapshot = snapshotBody();
 
         LocatorSpec passwordLocator = fillLoginForm(loginSnapshot.snapshot());
         submitLogin(passwordLocator);
-        waitAfterAction();
 
         MenuSnapshot initialMenu = waitForInitialMenu();
         assertThat(initialMenu.candidates())
@@ -169,13 +168,13 @@ class LiveApplicationExplorationTest {
         if (clickFirst(loginButtonLocators()) != null) {
             return;
         }
-        sessions.press(null, passwordLocator, "Enter", ACTION_TIMEOUT_MS);
+        sessions.press(passwordLocator, "Enter", ACTION_TIMEOUT_MS);
     }
 
     private LocatorSpec fillFirst(String value, List<LocatorSpec> locators) {
         for (LocatorSpec locator : locators) {
             try {
-                sessions.fill(null, locator, value, PROBE_TIMEOUT_MS);
+                sessions.fill(locator, value, PROBE_TIMEOUT_MS);
                 return locator;
             } catch (RuntimeException ignored) {
             }
@@ -186,7 +185,7 @@ class LiveApplicationExplorationTest {
     private LocatorSpec clickFirst(List<LocatorSpec> locators) {
         for (LocatorSpec locator : locators) {
             try {
-                sessions.click(null, locator, PROBE_TIMEOUT_MS, null);
+                sessions.click(locator, PROBE_TIMEOUT_MS, null);
                 return locator;
             } catch (RuntimeException ignored) {
             }
@@ -198,8 +197,7 @@ class LiveApplicationExplorationTest {
         RuntimeException lastError = null;
         for (LocatorSpec locator : clickLocators(candidate)) {
             try {
-                LocatorActionResult click = sessions.click(null, locator, ACTION_TIMEOUT_MS, null);
-                waitAfterAction();
+                LocatorActionResult click = sessions.click(locator, ACTION_TIMEOUT_MS, null);
                 waitForContentSettle();
                 PageSnapshotResult snapshot = describeSnapshot();
                 ControlSnapshot controls = snapshot.controls();
@@ -226,7 +224,7 @@ class LiveApplicationExplorationTest {
 
     private void waitVisibleQuietly(LocatorSpec locator, int timeoutMs) {
         try {
-            sessions.waitForLocator(null, locator, "visible", timeoutMs);
+            sessions.waitForLocator(locator, "visible", timeoutMs);
         } catch (RuntimeException ignored) {
         }
     }
@@ -250,7 +248,7 @@ class LiveApplicationExplorationTest {
         RuntimeException lastError = null;
         for (LocatorSpec root : menuRoots()) {
             try {
-                PageSnapshotResult snapshot = sessions.pageSnapshot(null, root, null, null, null, null, null,
+                PageSnapshotResult snapshot = sessions.pageSnapshot(root, null, null, null, null, null,
                         PROBE_TIMEOUT_MS);
                 List<MenuCandidate> candidates = extractMenuCandidates(snapshot.snapshot());
                 if (!candidates.isEmpty()) {
@@ -341,26 +339,12 @@ class LiveApplicationExplorationTest {
     }
 
     private PageSnapshotResult snapshotBody() {
-        return sessions.pageSnapshot(null, css("body"), null, null, null, null, null, SNAPSHOT_TIMEOUT_MS);
+        return sessions.pageSnapshot(css("body"), null, null, null, null, null, SNAPSHOT_TIMEOUT_MS);
     }
 
     /** Full inspection of the current page: structure plus control states (with tooltips) and grid rows. */
     private PageSnapshotResult describeSnapshot() {
-        return sessions.pageSnapshot(null, css("body"), true, true, true, 120, 25, PROBE_TIMEOUT_MS);
-    }
-
-    private void waitAfterAction() {
-        // Only the load-document wait is meaningful (covers the real post-login redirect); it is instant
-        // for in-app SPA clicks. networkidle is deliberately omitted - it never settles on this SPA and
-        // would just burn its full timeout on every action. Async content is handled by waitForContentSettle.
-        waitQuietly("domcontentloaded", 5_000);
-    }
-
-    private void waitQuietly(String state, int timeoutMs) {
-        try {
-            sessions.waitForLoadState(null, state, timeoutMs);
-        } catch (RuntimeException ignored) {
-        }
+        return sessions.pageSnapshot(css("body"), true, true, true, 120, 25, PROBE_TIMEOUT_MS);
     }
 
     private String describe(String snapshot, ControlSnapshot forms, GridSnapshot grids) {

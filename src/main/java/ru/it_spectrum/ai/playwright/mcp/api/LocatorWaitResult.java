@@ -7,7 +7,6 @@ package ru.it_spectrum.ai.playwright.mcp.api;
  * {@code count} is the number of elements matching the locator at the end of the wait.
  */
 public record LocatorWaitResult(
-        String pageId,
         LocatorSpec locator,
         String state,
         boolean found,

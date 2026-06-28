@@ -18,9 +18,7 @@ This implementation is backed by Playwright Java and keeps its browser automatio
 where they matter, but tool descriptions are written for an agent that may only see the MCP
 contract:
 
-- browser process
-- isolated browser context
-- browser tab
+- one default browser session
 - element locator
 - accessibility snapshot
 - locator strategies: `role`, `text`, `label`, `placeholder`, `altText`, `title`, `testId`, `css`, `xpath`
@@ -33,14 +31,13 @@ tool groups.
 
 | Group | Flag | Tools |
 |---|---|---|
-| Lifecycle | `PLAYWRIGHT_MCP_TOOLS_LIFECYCLE` | `launchBrowser`, `listBrowsers`, `closeBrowser`, `newBrowserContext`, `listBrowserContexts`, `closeBrowserContext`, `newPage`, `listPages`, `closePage` |
-| Page | `PLAYWRIGHT_MCP_TOOLS_PAGE` | `pageNavigate`, `pageReload`, `pageWaitForLoadState`, `pageWaitForLocator`, `pageSnapshot` |
-| Locator | `PLAYWRIGHT_MCP_TOOLS_LOCATOR` | `locatorClick`, `locatorFill`, `locatorPress`, `locatorHover`, `locatorCheck`, `locatorText`, `locatorCount` |
+| Page | `PLAYWRIGHT_MCP_TOOLS_PAGE` | `pageNavigate`, `pageWaitForLocator`, `pageSnapshot` |
+| Locator | `PLAYWRIGHT_MCP_TOOLS_LOCATOR` | `locatorClick`, `locatorFill`, `locatorPress`, `locatorCheck` |
 
-All groups are enabled by default.
+Both groups are enabled by default.
 
-Most page tools lazily create the default `Browser`, `BrowserContext`, and `Page`, so a client can
-start with:
+`pageNavigate` lazily creates the server-managed default `Browser`, `BrowserContext`, and `Page`, so
+a client can start with:
 
 ```json
 {
@@ -77,9 +74,9 @@ to a one-line summary. Opt into extra sections with flags (each adds tokens and 
 Bound large pages with the `maxControls` and `maxRows` caps, and narrow the read with a root `locator`
 (e.g. `nav`, `aside`, `main`) instead of the default `body`.
 
-After a menu click or filter change in a single-page app, `pageWaitForLoadState` is unreliable; use
-`pageWaitForLocator` (e.g. wait for `role=row` to become `visible`, or for a loading spinner to
-become `hidden`) before snapshotting so asynchronous content has settled.
+After a menu click or filter change in a single-page app, use `pageWaitForLocator` (e.g. wait for
+`role=row` to become `visible`, or for a loading spinner to become `hidden`) before snapshotting so
+asynchronous content has settled.
 
 ## Locator Object
 

@@ -58,8 +58,8 @@ class PlaywrightSessionManagerIntegrationTest {
     @Test
     void navigatesAndReturnsAriaSnapshot() {
         try {
-            var navigation = sessions.navigate(null, site.url("/index.html"), "domcontentloaded", null);
-            var snapshot = sessions.pageSnapshot(null, LocatorSpec.css("body"), null, null, null, null, null, null);
+            var navigation = sessions.navigate(site.url("/index.html"), "domcontentloaded", null);
+            var snapshot = sessions.pageSnapshot(LocatorSpec.css("body"), null, null, null, null, null, null);
 
             assertThat(navigation.status()).isEqualTo(200);
             assertThat(navigation.title()).isEqualTo("Playwright MCP Test Site");
@@ -71,16 +71,15 @@ class PlaywrightSessionManagerIntegrationTest {
     }
 
     @Test
-    void fillsClicksAndReadsLocatorText() {
+    void fillsClicksAndReadsStatusWithSnapshot() {
         try {
-            sessions.navigate(null, site.url("/form.html"), "domcontentloaded", null);
-            sessions.fill(null, new LocatorSpec("label", "Name", null, null, true, null, null, null, null), "Alice", null);
-            sessions.click(null, new LocatorSpec("role", null, "button", "Save", true, null, null, null, null), null, null);
+            sessions.navigate(site.url("/form.html"), "domcontentloaded", null);
+            sessions.fill(new LocatorSpec("label", "Name", null, null, true, null, null, null, null), "Alice", null);
+            sessions.click(new LocatorSpec("role", null, "button", "Save", true, null, null, null, null), null, null);
 
-            var status = sessions.locatorText(null, LocatorSpec.css("#status"), null);
+            var status = sessions.pageSnapshot(LocatorSpec.css("#status"), null, null, null, null, null, null);
 
-            assertThat(status.textContent()).isEqualTo("Saved Alice");
-            assertThat(status.visible()).isTrue();
+            assertThat(status.snapshot()).contains("Saved Alice");
         } catch (PlaywrightException e) {
             abortWhenBrowserIsMissing(e);
             throw e;
@@ -88,16 +87,17 @@ class PlaywrightSessionManagerIntegrationTest {
     }
 
     @Test
-    void observesDynamicDomChangesWithLocatorCount() {
+    void observesDynamicDomChangesWithWaitAndSnapshot() {
         try {
-            sessions.navigate(null, site.url("/dynamic.html"), "domcontentloaded", null);
-            sessions.click(null, new LocatorSpec("role", null, "button", "Add item", true, null, null, null, null), null, null);
+            sessions.navigate(site.url("/dynamic.html"), "domcontentloaded", null);
+            sessions.click(new LocatorSpec("role", null, "button", "Add item", true, null, null, null, null), null, null);
 
-            var count = sessions.locatorCount(null, LocatorSpec.css("#created"));
-            var text = sessions.locatorText(null, LocatorSpec.css("#created"), null);
+            var wait = sessions.waitForLocator(LocatorSpec.css("#created"), "visible", null);
+            var item = sessions.pageSnapshot(LocatorSpec.css("#created"), null, null, null, null, null, null);
 
-            assertThat(count.count()).isEqualTo(1);
-            assertThat(text.textContent()).isEqualTo("Created item");
+            assertThat(wait.found()).isTrue();
+            assertThat(wait.count()).isEqualTo(1);
+            assertThat(item.snapshot()).contains("Created item");
         } catch (PlaywrightException e) {
             abortWhenBrowserIsMissing(e);
             throw e;
