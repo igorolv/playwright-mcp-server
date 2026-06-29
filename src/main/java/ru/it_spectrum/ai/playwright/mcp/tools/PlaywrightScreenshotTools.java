@@ -22,7 +22,7 @@ public class PlaywrightScreenshotTools {
     }
 
     @McpTool(
-            description = "Capture a PNG screenshot of the current page and save it on the server under playwright-mcp.data-dir/screenshots. Use this for documentation, bug reports, and step-by-step evidence. The image bytes are not returned in the MCP response; the result contains the saved file path.",
+            description = "Capture a PNG screenshot of the current page and save it on the server. Use this for documentation, bug reports, and step-by-step evidence. The image bytes are not returned in the MCP response; the result contains the saved file path.",
             generateOutputSchema = true,
             annotations = @McpTool.McpAnnotations(readOnlyHint = false, destructiveHint = false, idempotentHint = false)
     )

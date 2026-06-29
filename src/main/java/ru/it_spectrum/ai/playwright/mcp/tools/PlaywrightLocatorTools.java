@@ -112,13 +112,13 @@ public class PlaywrightLocatorTools {
     }
 
     @McpTool(
-            description = "Read compact text/value from the first element matching a known locator without taking another full page snapshot. Use pageSnapshot first when you still need to discover what exists on the page; use locatorText after that for scoped table rows, cells, status labels, selected options, and filled inputs. This is the preferred data-extraction tool for large forms and wide ADF tables. Returns the total match count so callers can see whether the locator is ambiguous; use nth to choose a specific match.",
+            description = "Read compact text/value from the first element matching a known locator without taking another full page snapshot. Use pageSnapshot first when you still need to discover what exists on the page; use locatorText after that for scoped table rows, cells, status labels, selected options, and filled inputs. This is the preferred data-extraction tool for large forms and wide data tables. Returns the total match count so callers can see whether the locator is ambiguous; use nth to choose a specific match.",
             generateOutputSchema = true,
             annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true)
     )
     public LocatorTextResult locatorText(
             @McpToolParam(description = "Element locator to read from") LocatorSpec locator,
-            @McpToolParam(description = "Maximum number of characters to return. Default 4000; server caps larger values.", required = false) Integer maxChars,
+            @McpToolParam(description = "Maximum number of characters to return. Default 4000; larger values are capped.", required = false) Integer maxChars,
             @McpToolParam(description = "Read timeout in milliseconds", required = false) Integer timeoutMs
     ) {
         log.info("Tool call: locatorText (locator={})", locator);
