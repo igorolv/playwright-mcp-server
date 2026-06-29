@@ -1,5 +1,6 @@
 package ru.it_spectrum.ai.playwright.mcp.api;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import io.swagger.v3.oas.annotations.media.Schema;
 
 /**
@@ -10,6 +11,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * CSS/XPath/text-like locators, set value. hasText/nth/visible refine the resulting locator.
  */
 @Schema(description = "Element search descriptor. Choose one strategy: role with role/name, or css/xpath/text/label/placeholder/altText/title/testId with value. Add exact, hasText, nth, visible, or frameSelector only to narrow matches.")
+@JsonInclude(JsonInclude.Include.NON_NULL)
 public record LocatorSpec(
         @Schema(description = "Search strategy. Prefer role, text, label, placeholder, altText, title, or testId; use css/xpath as fallback.", allowableValues = {"css", "xpath", "role", "text", "label", "placeholder", "altText", "title", "testId"}, requiredMode = Schema.RequiredMode.NOT_REQUIRED, nullable = true)
         String kind,
