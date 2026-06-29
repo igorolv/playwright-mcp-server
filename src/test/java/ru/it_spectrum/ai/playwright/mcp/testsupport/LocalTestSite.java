@@ -44,6 +44,7 @@ public final class LocalTestSite implements AutoCloseable {
             case "/form.html" -> formHtml();
             case "/dynamic.html" -> dynamicHtml();
             case "/aria.html" -> ariaHtml();
+            case "/tables.html" -> tablesHtml();
             default -> notFoundHtml(path);
         };
         int status = body.startsWith("<!doctype html><title>Not found") ? 404 : 200;
@@ -134,6 +135,45 @@ public final class LocalTestSite implements AutoCloseable {
                       <button id="danger" aria-label="Delete account">X</button>
                       <div id="custom" role="button" tabindex="0" aria-label="Custom action">Custom</div>
                     </section>
+                  </main>
+                </body>
+                </html>
+                """;
+    }
+
+    private String tablesHtml() {
+        return """
+                <!doctype html>
+                <html lang="en">
+                <head><title>Tables Page</title></head>
+                <body>
+                  <main>
+                    <h1>Tables Page</h1>
+                    <p class="duplicate">Duplicate value</p>
+                    <p class="duplicate">Duplicate value</p>
+                    <label for="creditor">Creditor ID</label>
+                    <input id="creditor" value="913690">
+                    <table id="payments">
+                      <thead>
+                        <tr>
+                          <th>Дата п/п</th>
+                          <th>Номер п/п</th>
+                          <th>Сумма</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        <tr>
+                          <td>17.12.2025</td>
+                          <td>123</td>
+                          <td>10,00</td>
+                        </tr>
+                        <tr data-payment="target">
+                          <td>18.12.2025</td>
+                          <td>б/н</td>
+                          <td>55 471,18</td>
+                        </tr>
+                      </tbody>
+                    </table>
                   </main>
                 </body>
                 </html>

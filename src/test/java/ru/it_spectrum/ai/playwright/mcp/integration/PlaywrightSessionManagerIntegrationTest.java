@@ -123,6 +123,42 @@ class PlaywrightSessionManagerIntegrationTest {
         }
     }
 
+    @Test
+    void waitsForFirstMatchWhenTextLocatorMatchesMultipleElements() {
+        try {
+            sessions.navigate(site.url("/tables.html"), "domcontentloaded", null);
+
+            var wait = sessions.waitForLocator(
+                    new LocatorSpec("text", "Duplicate value", null, null, null, null, null, null, null),
+                    "visible",
+                    1_000);
+
+            assertThat(wait.found()).isTrue();
+            assertThat(wait.count()).isEqualTo(2);
+        } catch (PlaywrightException e) {
+            abortWhenBrowserIsMissing(e);
+            throw e;
+        }
+    }
+
+    @Test
+    void readsScopedLocatorTextAndInputValueWithoutFullSnapshot() {
+        try {
+            sessions.navigate(site.url("/tables.html"), "domcontentloaded", null);
+
+            var row = sessions.text(LocatorSpec.css("tr[data-payment='target']"), 200, null);
+            var input = sessions.text(LocatorSpec.css("#creditor"), 200, null);
+
+            assertThat(row.count()).isEqualTo(1);
+            assertThat(row.text()).contains("18.12.2025", "б/н", "55 471,18");
+            assertThat(row.truncated()).isFalse();
+            assertThat(input.text()).isEqualTo("913690");
+        } catch (PlaywrightException e) {
+            abortWhenBrowserIsMissing(e);
+            throw e;
+        }
+    }
+
     private void abortWhenBrowserIsMissing(PlaywrightException e) {
         String message = e.getMessage();
         if (message != null && (message.contains("Executable doesn't exist")

@@ -8,6 +8,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorActionResult;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorSpec;
+import ru.it_spectrum.ai.playwright.mcp.api.LocatorTextResult;
 import ru.it_spectrum.ai.playwright.mcp.playwright.PlaywrightSessionManager;
 
 @Service
@@ -106,6 +107,28 @@ public class PlaywrightLocatorTools {
             return result;
         } catch (RuntimeException e) {
             ToolLogger.failed(log, "locatorCheck", start, e.getMessage());
+            throw e;
+        }
+    }
+
+    @McpTool(
+            description = "Read compact text/value from the first element matching a known locator without taking another full page snapshot. Use pageSnapshot first when you still need to discover what exists on the page; use locatorText after that for scoped table rows, cells, status labels, selected options, and filled inputs. This is the preferred data-extraction tool for large forms and wide ADF tables. Returns the total match count so callers can see whether the locator is ambiguous; use nth to choose a specific match.",
+            generateOutputSchema = true,
+            annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true)
+    )
+    public LocatorTextResult locatorText(
+            @McpToolParam(description = "Element locator to read from") LocatorSpec locator,
+            @McpToolParam(description = "Maximum number of characters to return. Default 4000; server caps larger values.", required = false) Integer maxChars,
+            @McpToolParam(description = "Read timeout in milliseconds", required = false) Integer timeoutMs
+    ) {
+        log.info("Tool call: locatorText (locator={})", locator);
+        long start = System.nanoTime();
+        try {
+            LocatorTextResult result = sessions.text(locator, maxChars, timeoutMs);
+            ToolLogger.completed(log, "locatorText", start);
+            return result;
+        } catch (RuntimeException e) {
+            ToolLogger.failed(log, "locatorText", start, e.getMessage());
             throw e;
         }
     }

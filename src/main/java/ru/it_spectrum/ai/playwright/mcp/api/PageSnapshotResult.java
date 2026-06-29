@@ -11,7 +11,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * when the caller opts in via {@code includeControls} / {@code includeGrids}; otherwise they are null,
  * keeping the response small for a quick structural read.
  */
-@Schema(description = "Unified page inspection result containing an accessibility YAML snapshot plus optional controls and grid inventories.")
+@Schema(description = "Unified page inspection result containing an accessibility YAML snapshot plus controls and grid inventories when requested.")
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record PageSnapshotResult(
         @Schema(description = "Final URL after any redirects.", requiredMode = Schema.RequiredMode.NOT_REQUIRED, nullable = true)

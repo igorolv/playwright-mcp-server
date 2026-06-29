@@ -31,7 +31,7 @@ storage state, network routing, tracing, downloads, and PDF can be added as sepa
 | Group | Flag | Tools |
 |---|---|---|
 | Page | `PLAYWRIGHT_MCP_TOOLS_PAGE` | `pageNavigate`, `pageWaitForLocator`, `pageSnapshot` |
-| Locator | `PLAYWRIGHT_MCP_TOOLS_LOCATOR` | `locatorClick`, `locatorFill`, `locatorPress`, `locatorCheck` |
+| Locator | `PLAYWRIGHT_MCP_TOOLS_LOCATOR` | `locatorClick`, `locatorFill`, `locatorPress`, `locatorCheck`, `locatorText` |
 | Screenshot | `PLAYWRIGHT_MCP_TOOLS_SCREENSHOT` | `pageScreenshot` |
 
 All groups are enabled by default.
@@ -77,6 +77,11 @@ Bound large pages with the `maxControls` and `maxRows` caps, and narrow the read
 After a menu click or filter change in a single-page app, use `pageWaitForLocator` (e.g. wait for
 `role=row` to become `visible`, or for a loading spinner to become `hidden`) before snapshotting so
 asynchronous content has settled.
+
+For a narrow read from a known element, use `locatorText` instead of a full `pageSnapshot`. It reads
+the first matching element's compact text, input value, selected option text, `aria-label`, or
+`title`, and returns the total match count so ambiguous locators are visible. This is useful for
+large table rows and status labels.
 
 `pageScreenshot` captures the current browser page as a PNG file under
 `${playwright-mcp.data-dir}/screenshots`. It returns the absolute and relative file paths plus page

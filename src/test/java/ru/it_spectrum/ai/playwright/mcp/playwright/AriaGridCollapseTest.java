@@ -49,6 +49,59 @@ class AriaGridCollapseTest {
     }
 
     @Test
+    void collapsesHtmlTableWithColumnHeaders() {
+        String snapshot = """
+                - heading "Реестр" [level=1]
+                - table:
+                  - rowgroup:
+                    - row "ID Наименование Сумма":
+                      - columnheader "ID"
+                      - columnheader "Наименование"
+                      - columnheader "Сумма"
+                    - row "1 Альфа 10":
+                      - cell "1"
+                      - cell "Альфа"
+                      - cell "10"
+                - button "Обновить\"""";
+
+        String collapsed = PlaywrightSessionManager.collapseGrids(snapshot);
+
+        assertThat(collapsed.lines()).containsExactly(
+                "- heading \"Реестр\" [level=1]",
+                "- table: [3 column(s): ID, Наименование, Сумма - rows collapsed, call pageSnapshot with includeGrids=true to read rows]",
+                "- button \"Обновить\"");
+        assertThat(collapsed).doesNotContain("Альфа");
+    }
+
+    @Test
+    void collapsesLargeHtmlTableWithoutColumnHeaders() {
+        StringBuilder snapshot = new StringBuilder("- table:\n  - rowgroup:\n");
+        for (int i = 1; i <= 26; i++) {
+            snapshot.append("    - row \"").append(i).append(" item\":\n")
+                    .append("      - cell \"").append(i).append("\"\n")
+                    .append("      - cell \"item\"\n");
+        }
+
+        String collapsed = PlaywrightSessionManager.collapseGrids(snapshot.toString());
+
+        assertThat(collapsed).isEqualTo("- table: [rows collapsed - call pageSnapshot with includeGrids=true to read columns and rows]");
+    }
+
+    @Test
+    void keepsSmallLayoutTablesExpanded() {
+        String snapshot = """
+                - table:
+                  - rowgroup:
+                    - row "Данные Реестры":
+                      - cell "Данные"
+                      - cell "Реестры"
+                    - row "Выплаты":
+                      - cell "Выплаты\"""";
+
+        assertThat(PlaywrightSessionManager.collapseGrids(snapshot)).isEqualTo(snapshot);
+    }
+
+    @Test
     void leavesSnapshotWithoutGridsUnchanged() {
         String snapshot = """
                 - button "Меню"

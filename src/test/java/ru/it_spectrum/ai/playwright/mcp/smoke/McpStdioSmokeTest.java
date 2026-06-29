@@ -85,7 +85,8 @@ class McpStdioSmokeTest {
                             "locatorClick",
                             "locatorFill",
                             "locatorPress",
-                            "locatorCheck");
+                            "locatorCheck",
+                            "locatorText");
 
             String toolsJson = mapper.writeValueAsString(tools);
             assertThat(toolsJson)

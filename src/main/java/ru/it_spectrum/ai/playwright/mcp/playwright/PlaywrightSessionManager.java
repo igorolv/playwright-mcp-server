@@ -19,6 +19,7 @@ import ru.it_spectrum.ai.playwright.mcp.api.GridInfo;
 import ru.it_spectrum.ai.playwright.mcp.api.GridSnapshot;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorActionResult;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorSpec;
+import ru.it_spectrum.ai.playwright.mcp.api.LocatorTextResult;
 import ru.it_spectrum.ai.playwright.mcp.api.LocatorWaitResult;
 import ru.it_spectrum.ai.playwright.mcp.api.PageScreenshotResult;
 import ru.it_spectrum.ai.playwright.mcp.api.PageSnapshotResult;
@@ -49,6 +50,11 @@ public class PlaywrightSessionManager {
     private static final int MAX_GRIDS = 10;
     private static final int MAX_GRID_CELL_LENGTH = 200;
     private static final int MAX_TOOLTIP_PROBES = 40;
+    private static final int DEFAULT_MAX_TEXT_CHARS = 4_000;
+    private static final int MAX_TEXT_CHARS = 20_000;
+    private static final int TEXT_READ_TIMEOUT_MS = 5_000;
+    private static final int LARGE_TABLE_DIRECT_ROW_THRESHOLD = 25;
+    private static final int MAX_COLLAPSED_COLUMN_NAMES = 12;
     /**
      * Per-element metadata reads must stay bounded. Locator.evaluate auto-waits for the element to be
      * attached using the page default timeout (tens of seconds); on a virtualized grid (ag-Grid) the
@@ -63,12 +69,14 @@ public class PlaywrightSessionManager {
     private static final String GRID_CONTAINER_SELECTOR = "[role='grid'], [role='treegrid'], table";
     /** Icon-font ligature accessible name, e.g. "account_balance" or "light_mode": no spaces, lowercase + underscores. */
     private static final Pattern ICON_LIGATURE = Pattern.compile("^[a-z][a-z0-9_]*$");
-    /** A {@code - grid:} / {@code - treegrid:} node header line in a Playwright aria snapshot. */
-    private static final Pattern ARIA_GRID_HEADER =
-            Pattern.compile("^(\\s*)-\\s+(grid|treegrid)(\\s+\"[^\"]*\")?:\\s*$");
-    /** A {@code - columnheader "name"} line nested under a grid. */
+    /** A collapsible grid/treegrid/table node header line in a Playwright aria snapshot. */
+    private static final Pattern ARIA_COLLAPSIBLE_HEADER =
+            Pattern.compile("^(\\s*)-\\s+(grid|treegrid|table)(\\s+\"[^\"]*\")?:\\s*$");
+    /** A {@code - columnheader "name"} line nested under a table/grid. */
     private static final Pattern ARIA_COLUMNHEADER =
             Pattern.compile("^\\s*-\\s+columnheader\\s+\"([^\"]*)\".*$");
+    private static final Pattern ARIA_ROW =
+            Pattern.compile("^\\s*-\\s+row(?:\\s+\"[^\"]*\")?(?:\\s+\\[[^]]*])?:\\s*$");
     private static final DateTimeFormatter SCREENSHOT_TIMESTAMP =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS").withZone(ZoneOffset.UTC);
     private static final String GRID_EXTRACT_SCRIPT = """
@@ -98,8 +106,30 @@ public class PlaywrightSessionManager {
                 for (const r of el.querySelectorAll('tbody tr')) {
                   if (pushRow(r.querySelectorAll('td'))) break;
                 }
-              }
+            }
               return { role, columnCount: columns.length, columns, renderedRowCount: rows.length, rows };
+            }
+            """;
+    private static final String TEXT_EXTRACT_SCRIPT = """
+            (element, maxChars) => {
+              const compact = value => (value || '').replace(/\\s+/g, ' ').trim();
+              let text;
+              if (element instanceof HTMLInputElement || element instanceof HTMLTextAreaElement) {
+                text = element.value;
+              } else if (element instanceof HTMLSelectElement) {
+                text = Array.from(element.selectedOptions)
+                  .map(option => option.innerText || option.textContent || option.value)
+                  .join(' ');
+              } else {
+                text = element.innerText || element.textContent
+                  || element.getAttribute('aria-label') || element.getAttribute('title') || '';
+              }
+              text = compact(text);
+              const truncated = text.length > maxChars;
+              return {
+                text: truncated ? text.slice(0, maxChars) : text,
+                truncated
+              };
             }
             """;
     private static final String FORM_CONTROL_SELECTOR = """
@@ -260,10 +290,8 @@ public class PlaywrightSessionManager {
     }
 
     /**
-     * Replace the verbose body of every grid/treegrid node in a Playwright aria snapshot with a one-line
-     * summary that lists column headers and points to {@code pageSnapshot} with {@code includeGrids=true}
-     * for the rows. Keeps the structural snapshot focused on page layout and avoids duplicating (and
-     * bloating) the data available through the {@code includeGrids} section.
+     * Replace verbose grid/treegrid/data-table nodes in a Playwright aria snapshot with a one-line
+     * summary. Layout tables stay expanded so old ADF-style menus remain discoverable.
      */
     static String collapseGrids(String snapshot) {
         if (snapshot == null || snapshot.isBlank()) {
@@ -274,34 +302,85 @@ public class PlaywrightSessionManager {
         int i = 0;
         while (i < lines.size()) {
             String line = lines.get(i);
-            java.util.regex.Matcher header = ARIA_GRID_HEADER.matcher(line);
+            java.util.regex.Matcher header = ARIA_COLLAPSIBLE_HEADER.matcher(line);
             if (!header.matches()) {
                 appendLine(out, line);
                 i++;
                 continue;
             }
             int indent = header.group(1).length();
+            String type = header.group(2);
             String name = header.group(3) == null ? "" : header.group(3);
-            List<String> columns = new ArrayList<>();
             int j = i + 1;
             while (j < lines.size() && !lines.get(j).isBlank() && indentOf(lines.get(j)) > indent) {
-                java.util.regex.Matcher column = ARIA_COLUMNHEADER.matcher(lines.get(j));
+                j++;
+            }
+
+            SnapshotTableAnalysis analysis = analyzeSnapshotTable(lines, i + 1, j, indent, type);
+            if (!analysis.collapse()) {
+                appendLine(out, line);
+                i++;
+                continue;
+            }
+
+            appendLine(out, " ".repeat(indent) + "- " + type + name + ": " + collapsedSummary(analysis));
+            i = j;
+        }
+        return out.toString();
+    }
+
+    private static SnapshotTableAnalysis analyzeSnapshotTable(
+            List<String> lines,
+            int start,
+            int end,
+            int containerIndent,
+            String type
+    ) {
+        List<String> columns = new ArrayList<>();
+        int directRowIndent = Integer.MAX_VALUE;
+        for (int i = start; i < end; i++) {
+            String line = lines.get(i);
+            int indent = indentOf(line);
+            if (indent > containerIndent && ARIA_ROW.matcher(line).matches()) {
+                directRowIndent = Math.min(directRowIndent, indent);
+            }
+        }
+
+        int directRows = 0;
+        for (int i = start; i < end; i++) {
+            String line = lines.get(i);
+            int indent = indentOf(line);
+            if (indent == directRowIndent && ARIA_ROW.matcher(line).matches()) {
+                directRows++;
+            }
+            if (directRowIndent != Integer.MAX_VALUE && indent <= directRowIndent + 2) {
+                java.util.regex.Matcher column = ARIA_COLUMNHEADER.matcher(line);
                 if (column.matches()) {
                     String value = column.group(1).trim();
                     if (!value.isEmpty() && !columns.contains(value)) {
                         columns.add(value);
                     }
                 }
-                j++;
             }
-            String summary = columns.isEmpty()
-                    ? "[rows collapsed - call pageSnapshot with includeGrids=true to read columns and rows]"
-                    : "[" + columns.size() + " column(s): " + String.join(", ", columns)
-                            + " - rows collapsed, call pageSnapshot with includeGrids=true to read rows]";
-            appendLine(out, " ".repeat(indent) + "- " + header.group(2) + name + ": " + summary);
-            i = j;
         }
-        return out.toString();
+
+        boolean gridLike = "grid".equals(type) || "treegrid".equals(type);
+        boolean dataTable = "table".equals(type)
+                && (!columns.isEmpty() || directRows > LARGE_TABLE_DIRECT_ROW_THRESHOLD);
+        return new SnapshotTableAnalysis(gridLike || dataTable, columns, directRows);
+    }
+
+    private static String collapsedSummary(SnapshotTableAnalysis analysis) {
+        if (analysis.columns().isEmpty()) {
+            return "[rows collapsed - call pageSnapshot with includeGrids=true to read columns and rows]";
+        }
+        int visibleColumns = Math.min(analysis.columns().size(), MAX_COLLAPSED_COLUMN_NAMES);
+        String joined = String.join(", ", analysis.columns().subList(0, visibleColumns));
+        String suffix = analysis.columns().size() > visibleColumns
+                ? ", +" + (analysis.columns().size() - visibleColumns) + " more"
+                : "";
+        return "[" + analysis.columns().size() + " column(s): " + joined + suffix
+                + " - rows collapsed, call pageSnapshot with includeGrids=true to read rows]";
     }
 
     private static void appendLine(StringBuilder out, String line) {
@@ -381,6 +460,22 @@ public class PlaywrightSessionManager {
                 }
                 resolved.check(options);
             }
+        });
+    }
+
+    public LocatorTextResult text(LocatorSpec locator, Integer maxChars, Integer timeoutMs) {
+        return dispatcher.call(() -> {
+            ManagedPage managed = page(null, null);
+            LocatorSpec actualLocator = required(locator);
+            Locator resolved = locators.resolve(managed.page(), actualLocator);
+            Map<String, Object> data = readLocatorText(resolved.first(), normalizeMaxTextChars(maxChars), timeoutMs);
+            return new LocatorTextResult(
+                    actualLocator,
+                    stringValue(data, "text"),
+                    Boolean.TRUE.equals(booleanValue(data, "truncated")),
+                    safeCount(resolved),
+                    managed.page().url(),
+                    safeTitle(managed.page()));
         });
     }
 
@@ -758,6 +853,7 @@ public class PlaywrightSessionManager {
         return dispatcher.call(() -> {
             ManagedPage managed = page(null, null);
             Locator resolved = locators.resolve(managed.page(), required(locator));
+            Locator waitTarget = resolved.first();
             WaitForSelectorState state = waitForSelectorState(stateName);
             Locator.WaitForOptions options = new Locator.WaitForOptions().setState(state);
             if (timeoutMs != null && timeoutMs > 0) {
@@ -765,7 +861,7 @@ public class PlaywrightSessionManager {
             }
             boolean found;
             try {
-                resolved.waitFor(options);
+                waitTarget.waitFor(options);
                 found = true;
             } catch (com.microsoft.playwright.TimeoutError e) {
                 found = false;
@@ -833,6 +929,23 @@ public class PlaywrightSessionManager {
         return Map.of();
     }
 
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> readLocatorText(Locator locator, int maxChars, Integer timeoutMs) {
+        int effectiveTimeoutMs = timeoutMs != null && timeoutMs > 0 ? timeoutMs : TEXT_READ_TIMEOUT_MS;
+        try {
+            locator.waitFor(new Locator.WaitForOptions()
+                    .setState(WaitForSelectorState.ATTACHED)
+                    .setTimeout(effectiveTimeoutMs));
+            Object value = locator.evaluate(TEXT_EXTRACT_SCRIPT, maxChars,
+                    new Locator.EvaluateOptions().setTimeout(effectiveTimeoutMs));
+            if (value instanceof Map<?, ?> map) {
+                return (Map<String, Object>) map;
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return Map.of();
+    }
+
     private List<String> stringList(Object value) {
         List<String> result = new ArrayList<>();
         if (value instanceof List<?> list) {
@@ -873,6 +986,13 @@ public class PlaywrightSessionManager {
             return DEFAULT_MAX_GRID_ROWS;
         }
         return Math.min(maxRows, MAX_GRID_ROWS);
+    }
+
+    private int normalizeMaxTextChars(Integer maxChars) {
+        if (maxChars == null || maxChars <= 0) {
+            return DEFAULT_MAX_TEXT_CHARS;
+        }
+        return Math.min(maxChars, MAX_TEXT_CHARS);
     }
 
     private WaitForSelectorState waitForSelectorState(String value) {
@@ -968,6 +1088,9 @@ public class PlaywrightSessionManager {
 
     private interface LocatorOperation {
         void apply(Locator locator);
+    }
+
+    private record SnapshotTableAnalysis(boolean collapse, List<String> columns, int directRows) {
     }
 
     private static final class State {
