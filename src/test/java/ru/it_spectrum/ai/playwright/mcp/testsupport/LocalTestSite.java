@@ -174,6 +174,9 @@ public final class LocalTestSite implements AutoCloseable {
                         </tr>
                       </tbody>
                     </table>
+                    <table id="layout" role="presentation">
+                      <tr><td></td></tr>
+                    </table>
                   </main>
                 </body>
                 </html>

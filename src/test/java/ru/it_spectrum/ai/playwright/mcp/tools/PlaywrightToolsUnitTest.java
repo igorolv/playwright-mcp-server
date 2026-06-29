@@ -30,7 +30,7 @@ class PlaywrightToolsUnitTest {
                 "C:\\tmp\\shot.png", "screenshots\\shot.png", false, 1024);
         LocatorSpec body = LocatorSpec.css("body");
         PageSnapshotResult snapshot = new PageSnapshotResult("http://example.test", "Example",
-                body, 1, "- heading \"Example\"", null, null, new SnapshotCollapseInfo(true, 0, false, List.of()));
+                body, 1, "- heading \"Example\"", null, null, new SnapshotCollapseInfo(true, 0, false, List.of()), null);
 
         when(sessions.navigate("http://example.test", null, null)).thenReturn(navigation);
         when(sessions.pageSnapshot(body, true, null, null, null, 20, null, null)).thenReturn(snapshot);

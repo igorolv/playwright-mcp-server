@@ -260,7 +260,8 @@ public class PlaywrightSessionManager {
             if (matchedCount == 0) {
                 return new PageSnapshotResult(managed.page().url(), safeTitle(managed.page()),
                         actualLocator, 0, "", null, null,
-                        new SnapshotCollapseInfo(!Boolean.FALSE.equals(collapseSnapshot), 0, false, List.of()));
+                        new SnapshotCollapseInfo(!Boolean.FALSE.equals(collapseSnapshot), 0, false, List.of()),
+                        null);
             }
             // Snapshot the first match so an ambiguous root reports matchedCount instead of failing with a
             // strict-mode violation; matchedCount tells the caller the root was not unique.
@@ -278,8 +279,17 @@ public class PlaywrightSessionManager {
             GridSnapshot grids = Boolean.TRUE.equals(includeGrids)
                     ? collectGridSnapshot(snapshotRoot, maxRows, timeoutMs)
                     : null;
+            // The root resolved, but an <input> or an ADF role=presentation layout table yields an empty
+            // aria snapshot. Without a hint matchedCount>0 + blank snapshot looks like a failure; point the
+            // caller at includeControls/includeGrids or a content-bearing, role-based/narrower locator.
+            String note = (collapsed.snapshot() == null || collapsed.snapshot().isBlank())
+                    ? "Root matched " + matchedCount + " element(s) but the first match has no accessibility"
+                            + " subtree (e.g. an <input> or an ADF layout table with role=presentation), so the"
+                            + " snapshot is empty. Use includeControls/includeGrids to read it, or target a"
+                            + " content region with a role-based or narrower locator."
+                    : null;
             return new PageSnapshotResult(managed.page().url(), safeTitle(managed.page()),
-                    actualLocator, matchedCount, collapsed.snapshot(), controls, grids, collapsed.info());
+                    actualLocator, matchedCount, collapsed.snapshot(), controls, grids, collapsed.info(), note);
         });
     }
 

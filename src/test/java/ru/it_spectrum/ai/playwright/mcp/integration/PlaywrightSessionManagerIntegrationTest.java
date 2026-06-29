@@ -153,8 +153,30 @@ class PlaywrightSessionManagerIntegrationTest {
 
             assertThat(snapshot.matchedCount()).isZero();
             assertThat(snapshot.snapshot()).isEmpty();
+            // matchedCount=0 is already self-explanatory via the schema; the diagnostic note is only for the
+            // matched-but-empty case, so it stays null here.
+            assertThat(snapshot.note()).isNull();
             // A non-matching root must fail fast (count() does not wait) rather than block the 10s timeout.
             assertThat(elapsedMs).isLessThan(5_000);
+        } catch (PlaywrightException e) {
+            abortWhenBrowserIsMissing(e);
+            throw e;
+        }
+    }
+
+    @Test
+    void addsDiagnosticNoteWhenRootMatchesButHasNoAccessibilitySubtree() {
+        try {
+            sessions.navigate(site.url("/tables.html"), "domcontentloaded", null);
+
+            // A role=presentation table resolves but yields an empty aria snapshot, mirroring ADF layout
+            // tables in the real apps where matchedCount>0 but the snapshot string is blank.
+            var snapshot = sessions.pageSnapshot(
+                    LocatorSpec.css("#layout"), null, null, null, null, null, null, null);
+
+            assertThat(snapshot.matchedCount()).isEqualTo(1);
+            assertThat(snapshot.snapshot()).isBlank();
+            assertThat(snapshot.note()).contains("no accessibility", "includeControls/includeGrids");
         } catch (PlaywrightException e) {
             abortWhenBrowserIsMissing(e);
             throw e;

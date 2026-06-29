@@ -34,6 +34,8 @@ public record PageSnapshotResult(
         @Schema(description = "Structured grid/table data; null when includeGrids was not requested.", requiredMode = Schema.RequiredMode.NOT_REQUIRED, nullable = true)
         GridSnapshot grids,
         @Schema(description = "Metadata about data-like table/grid nodes collapsed in the snapshot string.", requiredMode = Schema.RequiredMode.REQUIRED)
-        SnapshotCollapseInfo collapse
+        SnapshotCollapseInfo collapse,
+        @Schema(description = "Diagnostic hint, present only when the root matched elements (matchedCount>0) but the snapshot came back empty because the first match has no accessibility subtree (e.g. an <input> or an ADF layout table with role=presentation). Null otherwise.", requiredMode = Schema.RequiredMode.NOT_REQUIRED, nullable = true)
+        String note
 ) {
 }
