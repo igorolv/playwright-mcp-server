@@ -142,6 +142,43 @@ class PlaywrightSessionManagerIntegrationTest {
     }
 
     @Test
+    void returnsEmptySnapshotWithoutWaitingWhenRootLocatorMatchesNothing() {
+        try {
+            sessions.navigate(site.url("/index.html"), "domcontentloaded", null);
+
+            long start = System.nanoTime();
+            var snapshot = sessions.pageSnapshot(
+                    LocatorSpec.css("#no-such-element-anywhere"), null, null, null, null, null, null, 10_000);
+            long elapsedMs = (System.nanoTime() - start) / 1_000_000;
+
+            assertThat(snapshot.matchedCount()).isZero();
+            assertThat(snapshot.snapshot()).isEmpty();
+            // A non-matching root must fail fast (count() does not wait) rather than block the 10s timeout.
+            assertThat(elapsedMs).isLessThan(5_000);
+        } catch (PlaywrightException e) {
+            abortWhenBrowserIsMissing(e);
+            throw e;
+        }
+    }
+
+    @Test
+    void snapshotsFirstMatchAndReportsCountWhenRootMatchesMultipleElements() {
+        try {
+            sessions.navigate(site.url("/tables.html"), "domcontentloaded", null);
+
+            var snapshot = sessions.pageSnapshot(
+                    new LocatorSpec("text", "Duplicate value", null, null, null, null, null, null, null),
+                    null, null, null, null, null, null, null);
+
+            assertThat(snapshot.matchedCount()).isEqualTo(2);
+            assertThat(snapshot.snapshot()).contains("Duplicate value");
+        } catch (PlaywrightException e) {
+            abortWhenBrowserIsMissing(e);
+            throw e;
+        }
+    }
+
+    @Test
     void readsScopedLocatorTextAndInputValueWithoutFullSnapshot() {
         try {
             sessions.navigate(site.url("/tables.html"), "domcontentloaded", null);

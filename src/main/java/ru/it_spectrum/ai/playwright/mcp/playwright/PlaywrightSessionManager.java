@@ -253,21 +253,33 @@ public class PlaywrightSessionManager {
                     ? locator
                     : LocatorSpec.css(properties.snapshot().defaultRootSelector());
             Locator root = locators.resolve(managed.page(), actualLocator);
+            // count() does not auto-wait. Checking it first means a wrong/typo root locator returns
+            // matchedCount=0 instantly instead of blocking the full snapshot timeout (tens of seconds)
+            // and then surfacing a raw Playwright TimeoutError, mirroring pageWaitForLocator(found=false).
+            int matchedCount = safeCount(root);
+            if (matchedCount == 0) {
+                return new PageSnapshotResult(managed.page().url(), safeTitle(managed.page()),
+                        actualLocator, 0, "", null, null,
+                        new SnapshotCollapseInfo(!Boolean.FALSE.equals(collapseSnapshot), 0, false, List.of()));
+            }
+            // Snapshot the first match so an ambiguous root reports matchedCount instead of failing with a
+            // strict-mode violation; matchedCount tells the caller the root was not unique.
+            Locator snapshotRoot = root.first();
             Locator.AriaSnapshotOptions options = new Locator.AriaSnapshotOptions();
             if (timeoutMs != null && timeoutMs > 0) {
                 options.setTimeout(timeoutMs);
             }
-            SnapshotCollapseResult collapsed = collapseSnapshot(root.ariaSnapshot(options),
+            SnapshotCollapseResult collapsed = collapseSnapshot(snapshotRoot.ariaSnapshot(options),
                     !Boolean.FALSE.equals(collapseSnapshot));
             ControlSnapshot controls = Boolean.TRUE.equals(includeControls)
-                    ? collectControlSnapshot(managed.page(), root, maxControls,
+                    ? collectControlSnapshot(managed.page(), snapshotRoot, maxControls,
                             Boolean.TRUE.equals(includeTooltips), timeoutMs)
                     : null;
             GridSnapshot grids = Boolean.TRUE.equals(includeGrids)
-                    ? collectGridSnapshot(root, maxRows, timeoutMs)
+                    ? collectGridSnapshot(snapshotRoot, maxRows, timeoutMs)
                     : null;
             return new PageSnapshotResult(managed.page().url(), safeTitle(managed.page()),
-                    actualLocator, collapsed.snapshot(), controls, grids, collapsed.info());
+                    actualLocator, matchedCount, collapsed.snapshot(), controls, grids, collapsed.info());
         });
     }
 
