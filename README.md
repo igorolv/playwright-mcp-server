@@ -60,7 +60,10 @@ with `pageSnapshot`.
 
 `pageSnapshot` is the single page-inspection tool. By default it returns just the structural overview
 (`snapshot`): headings, landmarks, links, roles, and locator targets, with grids and tables collapsed
-to a one-line summary. Opt into extra sections with flags (each adds tokens and time):
+to a one-line summary. The `collapse` field reports whether collapsing was enabled, how many
+data-like nodes were collapsed, and a capped list of collapsed node metadata with the kind, reason,
+direct row count, and detected columns. Opt into extra sections with flags (each adds tokens and
+time):
 
 - `includeControls=true` adds the `controls` section: interactive controls with the detail the
   structural snapshot omits — role, type, label/placeholder, enabled/disabled, checked, visible/hidden,
@@ -70,6 +73,9 @@ to a one-line summary. Opt into extra sections with flags (each adds tokens and 
 - `includeGrids=true` adds the `grids` section: the rows and columns inside tables and ARIA
   grids/treegrids (ag-Grid, Angular Material, plain HTML tables). Virtualized grids only keep on-screen
   rows in the DOM, so `renderedRowCount` may be smaller than the real total.
+- `collapseSnapshot=false` returns the raw Playwright aria snapshot without collapsing data-like
+  tables/grids. Use this only with a narrow root locator or when debugging collapse behavior, because
+  responses can become large.
 
 Bound large pages with the `maxControls` and `maxRows` caps, and narrow the read with a root `locator`
 (e.g. `nav`, `aside`, `main`) instead of the default `body`.
@@ -77,6 +83,11 @@ Bound large pages with the `maxControls` and `maxRows` caps, and narrow the read
 After a menu click or filter change in a single-page app, use `pageWaitForLocator` (e.g. wait for
 `role=row` to become `visible`, or for a loading spinner to become `hidden`) before snapshotting so
 asynchronous content has settled.
+
+`pageWaitForLocator` waits on the first matching element and returns the total `count` of matches.
+`found=true` with `count > 1` is not an error; it means the locator was broad enough to match several
+elements. Scope the locator or use `nth` when uniqueness matters, and prefer a stable status label
+for state checks before reading data with `locatorText`.
 
 For a narrow read from a known element, use `locatorText` instead of a full `pageSnapshot`. It reads
 the first matching element's compact text, input value, selected option text, `aria-label`, or

@@ -60,7 +60,7 @@ class PlaywrightSessionManagerIntegrationTest {
     void navigatesAndReturnsAriaSnapshot() {
         try {
             var navigation = sessions.navigate(site.url("/index.html"), "domcontentloaded", null);
-            var snapshot = sessions.pageSnapshot(LocatorSpec.css("body"), null, null, null, null, null, null);
+            var snapshot = sessions.pageSnapshot(LocatorSpec.css("body"), null, null, null, null, null, null, null);
 
             assertThat(navigation.status()).isEqualTo(200);
             assertThat(navigation.title()).isEqualTo("Playwright MCP Test Site");
@@ -96,7 +96,7 @@ class PlaywrightSessionManagerIntegrationTest {
             sessions.fill(new LocatorSpec("label", "Name", null, null, true, null, null, null, null), "Alice", null);
             sessions.click(new LocatorSpec("role", null, "button", "Save", true, null, null, null, null), null, null);
 
-            var status = sessions.pageSnapshot(LocatorSpec.css("#status"), null, null, null, null, null, null);
+            var status = sessions.pageSnapshot(LocatorSpec.css("#status"), null, null, null, null, null, null, null);
 
             assertThat(status.snapshot()).contains("Saved Alice");
         } catch (PlaywrightException e) {
@@ -112,7 +112,7 @@ class PlaywrightSessionManagerIntegrationTest {
             sessions.click(new LocatorSpec("role", null, "button", "Add item", true, null, null, null, null), null, null);
 
             var wait = sessions.waitForLocator(LocatorSpec.css("#created"), "visible", null);
-            var item = sessions.pageSnapshot(LocatorSpec.css("#created"), null, null, null, null, null, null);
+            var item = sessions.pageSnapshot(LocatorSpec.css("#created"), null, null, null, null, null, null, null);
 
             assertThat(wait.found()).isTrue();
             assertThat(wait.count()).isEqualTo(1);

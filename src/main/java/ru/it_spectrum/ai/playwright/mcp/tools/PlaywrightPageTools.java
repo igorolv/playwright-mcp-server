@@ -47,7 +47,7 @@ public class PlaywrightPageTools {
     }
 
     @McpTool(
-            description = "Inspect the current page for orientation. A full body snapshot is valid when you have just navigated, logged in, opened a menu, or otherwise need to discover what exists on the page and choose locators. Returns compact accessibility YAML for page STRUCTURE (headings, landmarks, links, text, roles) plus locator targets. Grids and data-like tables are collapsed to a one-line summary by default so broad snapshots stay useful. After you know the target locator, prefer pageWaitForLocator for state checks and locatorText for reading a specific row, cell, status, or input value instead of repeatedly snapshotting the full body. Use a root locator such as nav, aside, main, a dialog, iframe body, table, or form when you only need one region. Extra detail flags add response size and time: includeControls=true returns interactive controls and states; includeTooltips=true also hovers icon-only controls for tooltips; includeGrids=true reads rendered rows and columns inside tables and ARIA grids/treegrids. Use maxControls and maxRows to bound large pages.",
+            description = "Inspect the current page for orientation. A full body snapshot is valid when you have just navigated, logged in, opened a menu, or otherwise need to discover what exists on the page and choose locators. Returns compact accessibility YAML for page STRUCTURE (headings, landmarks, links, text, roles) plus locator targets. Grids and data-like tables are collapsed to a one-line summary by default so broad snapshots stay useful, and the collapse field explains what was collapsed. After you know the target locator, prefer pageWaitForLocator for state checks and locatorText for reading a specific row, cell, status, or input value instead of repeatedly snapshotting the full body. Use a root locator such as nav, aside, main, a dialog, iframe body, table, or form when you only need one region. Extra detail flags add response size and time: includeControls=true returns interactive controls and states; includeTooltips=true also hovers icon-only controls for tooltips; includeGrids=true reads rendered rows and columns inside tables and ARIA grids/treegrids. Set collapseSnapshot=false only when you need the raw Playwright aria snapshot for a narrow locator or collapse debugging. Use maxControls and maxRows to bound large pages.",
             generateOutputSchema = true,
             annotations = @McpTool.McpAnnotations(readOnlyHint = true, destructiveHint = false, idempotentHint = true)
     )
@@ -56,16 +56,17 @@ public class PlaywrightPageTools {
             @McpToolParam(description = "When true, also return interactive controls (inputs, selects, buttons, checkboxes, radios, switches) with states and labels. Prefer a narrow root locator on large forms.", required = false) Boolean includeControls,
             @McpToolParam(description = "When true (and includeControls is true), hover icon-only/nameless controls to capture hover tooltip text. Slower; use only when controls show icon codes such as account_balance.", required = false) Boolean includeTooltips,
             @McpToolParam(description = "When true, also return rendered rows and columns inside tables and ARIA grids/treegrids. Prefer locatorText for one known row or cell.", required = false) Boolean includeGrids,
+            @McpToolParam(description = "When false, return the raw Playwright aria snapshot without collapsing data-like tables/grids. Default true. Use false only with a narrow root locator or when debugging collapse behavior because responses can become large.", required = false) Boolean collapseSnapshot,
             @McpToolParam(description = "Maximum number of controls to return when includeControls is true. Default 80; server caps larger values.", required = false) Integer maxControls,
             @McpToolParam(description = "Maximum rendered rows per grid to return when includeGrids is true. Default 50; server caps larger values.", required = false) Integer maxRows,
             @McpToolParam(description = "Timeout in milliseconds for the snapshot and visibility/enabled checks", required = false) Integer timeoutMs
     ) {
-        log.info("Tool call: pageSnapshot (locator={}, includeControls={}, includeTooltips={}, includeGrids={})",
-                locator, includeControls, includeTooltips, includeGrids);
+        log.info("Tool call: pageSnapshot (locator={}, includeControls={}, includeTooltips={}, includeGrids={}, collapseSnapshot={})",
+                locator, includeControls, includeTooltips, includeGrids, collapseSnapshot);
         long start = System.nanoTime();
         try {
             PageSnapshotResult result = sessions.pageSnapshot(locator, includeControls, includeTooltips,
-                    includeGrids, maxControls, maxRows, timeoutMs);
+                    includeGrids, collapseSnapshot, maxControls, maxRows, timeoutMs);
             ToolLogger.completed(log, "pageSnapshot", start);
             return result;
         } catch (RuntimeException e) {

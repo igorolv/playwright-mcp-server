@@ -248,7 +248,7 @@ class LiveApplicationExplorationTest {
         RuntimeException lastError = null;
         for (LocatorSpec root : menuRoots()) {
             try {
-                PageSnapshotResult snapshot = sessions.pageSnapshot(root, null, null, null, null, null,
+                PageSnapshotResult snapshot = sessions.pageSnapshot(root, null, null, null, null, null, null,
                         PROBE_TIMEOUT_MS);
                 List<MenuCandidate> candidates = extractMenuCandidates(snapshot.snapshot());
                 if (!candidates.isEmpty()) {
@@ -339,12 +339,12 @@ class LiveApplicationExplorationTest {
     }
 
     private PageSnapshotResult snapshotBody() {
-        return sessions.pageSnapshot(css("body"), null, null, null, null, null, SNAPSHOT_TIMEOUT_MS);
+        return sessions.pageSnapshot(css("body"), null, null, null, null, null, null, SNAPSHOT_TIMEOUT_MS);
     }
 
     /** Full inspection of the current page: structure plus control states (with tooltips) and grid rows. */
     private PageSnapshotResult describeSnapshot() {
-        return sessions.pageSnapshot(css("body"), true, true, true, 120, 25, PROBE_TIMEOUT_MS);
+        return sessions.pageSnapshot(css("body"), true, true, true, null, 120, 25, PROBE_TIMEOUT_MS);
     }
 
     private String describe(String snapshot, ControlSnapshot forms, GridSnapshot grids) {

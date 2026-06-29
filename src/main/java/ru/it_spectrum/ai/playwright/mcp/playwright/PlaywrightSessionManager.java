@@ -24,6 +24,8 @@ import ru.it_spectrum.ai.playwright.mcp.api.LocatorWaitResult;
 import ru.it_spectrum.ai.playwright.mcp.api.PageScreenshotResult;
 import ru.it_spectrum.ai.playwright.mcp.api.PageSnapshotResult;
 import ru.it_spectrum.ai.playwright.mcp.api.PageNavigationResult;
+import ru.it_spectrum.ai.playwright.mcp.api.SnapshotCollapsedNode;
+import ru.it_spectrum.ai.playwright.mcp.api.SnapshotCollapseInfo;
 import ru.it_spectrum.ai.playwright.mcp.config.PlaywrightMcpProperties;
 
 import java.nio.file.Files;
@@ -54,7 +56,10 @@ public class PlaywrightSessionManager {
     private static final int MAX_TEXT_CHARS = 20_000;
     private static final int TEXT_READ_TIMEOUT_MS = 5_000;
     private static final int LARGE_TABLE_DIRECT_ROW_THRESHOLD = 25;
+    private static final int NESTED_BODY_TABLE_DIRECT_ROW_THRESHOLD = 5;
+    private static final int NESTED_BODY_TABLE_ROW_THRESHOLD = 3;
     private static final int MAX_COLLAPSED_COLUMN_NAMES = 12;
+    private static final int MAX_COLLAPSE_NODES = 20;
     /**
      * Per-element metadata reads must stay bounded. Locator.evaluate auto-waits for the element to be
      * attached using the page default timeout (tens of seconds); on a virtualized grid (ag-Grid) the
@@ -71,12 +76,14 @@ public class PlaywrightSessionManager {
     private static final Pattern ICON_LIGATURE = Pattern.compile("^[a-z][a-z0-9_]*$");
     /** A collapsible grid/treegrid/table node header line in a Playwright aria snapshot. */
     private static final Pattern ARIA_COLLAPSIBLE_HEADER =
-            Pattern.compile("^(\\s*)-\\s+(grid|treegrid|table)(\\s+\"[^\"]*\")?:\\s*$");
+            Pattern.compile("^(\\s*)-\\s+(grid|treegrid|table)(\\s+\"(?:\\\\.|[^\"\\\\])*\")?:\\s*$");
     /** A {@code - columnheader "name"} line nested under a table/grid. */
     private static final Pattern ARIA_COLUMNHEADER =
-            Pattern.compile("^\\s*-\\s+columnheader\\s+\"([^\"]*)\".*$");
+            Pattern.compile("^\\s*-\\s+columnheader\\s+\"((?:\\\\.|[^\"\\\\])*)\".*$");
     private static final Pattern ARIA_ROW =
-            Pattern.compile("^\\s*-\\s+row(?:\\s+\"[^\"]*\")?(?:\\s+\\[[^]]*])?:\\s*$");
+            Pattern.compile("^\\s*-\\s+row(?:\\s+.*)?:\\s*$");
+    private static final Pattern ARIA_CELL =
+            Pattern.compile("^\\s*-\\s+(?:cell|gridcell)(?:\\s+.*)?$");
     private static final DateTimeFormatter SCREENSHOT_TIMESTAMP =
             DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS").withZone(ZoneOffset.UTC);
     private static final String GRID_EXTRACT_SCRIPT = """
@@ -238,6 +245,7 @@ public class PlaywrightSessionManager {
 
     public PageSnapshotResult pageSnapshot(LocatorSpec locator, Boolean includeControls,
                                            Boolean includeTooltips, Boolean includeGrids,
+                                           Boolean collapseSnapshot,
                                            Integer maxControls, Integer maxRows, Integer timeoutMs) {
         return dispatcher.call(() -> {
             ManagedPage managed = page(null, null);
@@ -249,7 +257,8 @@ public class PlaywrightSessionManager {
             if (timeoutMs != null && timeoutMs > 0) {
                 options.setTimeout(timeoutMs);
             }
-            String snapshot = collapseGrids(root.ariaSnapshot(options));
+            SnapshotCollapseResult collapsed = collapseSnapshot(root.ariaSnapshot(options),
+                    !Boolean.FALSE.equals(collapseSnapshot));
             ControlSnapshot controls = Boolean.TRUE.equals(includeControls)
                     ? collectControlSnapshot(managed.page(), root, maxControls,
                             Boolean.TRUE.equals(includeTooltips), timeoutMs)
@@ -258,7 +267,7 @@ public class PlaywrightSessionManager {
                     ? collectGridSnapshot(root, maxRows, timeoutMs)
                     : null;
             return new PageSnapshotResult(managed.page().url(), safeTitle(managed.page()),
-                    actualLocator, snapshot, controls, grids);
+                    actualLocator, collapsed.snapshot(), controls, grids, collapsed.info());
         });
     }
 
@@ -294,17 +303,34 @@ public class PlaywrightSessionManager {
      * summary. Layout tables stay expanded so old ADF-style menus remain discoverable.
      */
     static String collapseGrids(String snapshot) {
+        return collapseSnapshot(snapshot, true).snapshot();
+    }
+
+    static SnapshotCollapseResult collapseSnapshot(String snapshot, boolean enabled) {
+        SnapshotCollapseInfo disabledInfo = new SnapshotCollapseInfo(false, 0, false, List.of());
+        if (!enabled) {
+            return new SnapshotCollapseResult(snapshot, disabledInfo);
+        }
+        SnapshotCollapseInfo emptyInfo = new SnapshotCollapseInfo(true, 0, false, List.of());
         if (snapshot == null || snapshot.isBlank()) {
-            return snapshot;
+            return new SnapshotCollapseResult(snapshot, emptyInfo);
         }
         List<String> lines = snapshot.lines().toList();
         StringBuilder out = new StringBuilder();
+        List<SnapshotCollapsedNode> collapsedNodes = new ArrayList<>();
+        int collapsedCount = 0;
+        boolean previousCollapsedColumnHeaders = false;
+        int previousCollapsedIndent = -1;
         int i = 0;
         while (i < lines.size()) {
             String line = lines.get(i);
             java.util.regex.Matcher header = ARIA_COLLAPSIBLE_HEADER.matcher(line);
             if (!header.matches()) {
                 appendLine(out, line);
+                if (!line.isBlank()) {
+                    previousCollapsedColumnHeaders = false;
+                    previousCollapsedIndent = -1;
+                }
                 i++;
                 continue;
             }
@@ -316,17 +342,32 @@ public class PlaywrightSessionManager {
                 j++;
             }
 
-            SnapshotTableAnalysis analysis = analyzeSnapshotTable(lines, i + 1, j, indent, type);
+            boolean followsColumnHeaders = previousCollapsedColumnHeaders && previousCollapsedIndent == indent;
+            SnapshotTableAnalysis analysis = analyzeSnapshotTable(lines, i + 1, j, indent, type,
+                    followsColumnHeaders);
             if (!analysis.collapse()) {
                 appendLine(out, line);
+                previousCollapsedColumnHeaders = false;
+                previousCollapsedIndent = -1;
                 i++;
                 continue;
             }
 
             appendLine(out, " ".repeat(indent) + "- " + type + name + ": " + collapsedSummary(analysis));
+            if (collapsedNodes.size() < MAX_COLLAPSE_NODES) {
+                collapsedNodes.add(collapsedNode(collapsedCount, type, name, analysis));
+            }
+            collapsedCount++;
+            previousCollapsedColumnHeaders = "columnHeaders".equals(analysis.reason());
+            previousCollapsedIndent = previousCollapsedColumnHeaders ? indent : -1;
             i = j;
         }
-        return out.toString();
+        SnapshotCollapseInfo info = new SnapshotCollapseInfo(
+                true,
+                collapsedCount,
+                collapsedCount > collapsedNodes.size(),
+                collapsedNodes);
+        return new SnapshotCollapseResult(out.toString(), info);
     }
 
     private static SnapshotTableAnalysis analyzeSnapshotTable(
@@ -334,7 +375,8 @@ public class PlaywrightSessionManager {
             int start,
             int end,
             int containerIndent,
-            String type
+            String type,
+            boolean followsColumnHeaders
     ) {
         List<String> columns = new ArrayList<>();
         int directRowIndent = Integer.MAX_VALUE;
@@ -347,16 +389,20 @@ public class PlaywrightSessionManager {
         }
 
         int directRows = 0;
+        int rowsWithNestedTables = 0;
         for (int i = start; i < end; i++) {
             String line = lines.get(i);
             int indent = indentOf(line);
             if (indent == directRowIndent && ARIA_ROW.matcher(line).matches()) {
                 directRows++;
+                if (rowHasNestedDataTable(lines, i + 1, end, directRowIndent)) {
+                    rowsWithNestedTables++;
+                }
             }
             if (directRowIndent != Integer.MAX_VALUE && indent <= directRowIndent + 2) {
                 java.util.regex.Matcher column = ARIA_COLUMNHEADER.matcher(line);
                 if (column.matches()) {
-                    String value = column.group(1).trim();
+                    String value = unescapeSnapshotText(column.group(1).trim());
                     if (!value.isEmpty() && !columns.contains(value)) {
                         columns.add(value);
                     }
@@ -365,9 +411,95 @@ public class PlaywrightSessionManager {
         }
 
         boolean gridLike = "grid".equals(type) || "treegrid".equals(type);
-        boolean dataTable = "table".equals(type)
-                && (!columns.isEmpty() || directRows > LARGE_TABLE_DIRECT_ROW_THRESHOLD);
-        return new SnapshotTableAnalysis(gridLike || dataTable, columns, directRows);
+        boolean nestedBodyTable = rowsWithNestedTables > 0
+                && (followsColumnHeaders
+                || (directRows > NESTED_BODY_TABLE_DIRECT_ROW_THRESHOLD
+                && rowsWithNestedTables >= NESTED_BODY_TABLE_ROW_THRESHOLD));
+        String reason = null;
+        if ("grid".equals(type)) {
+            reason = "gridRole";
+        } else if ("treegrid".equals(type)) {
+            reason = "treegridRole";
+        } else if (!columns.isEmpty()) {
+            reason = "columnHeaders";
+        } else if (directRows > LARGE_TABLE_DIRECT_ROW_THRESHOLD) {
+            reason = "largeRowCount";
+        } else if (nestedBodyTable) {
+            reason = "nestedBodyRows";
+        }
+        boolean dataTable = "table".equals(type) && reason != null;
+        return new SnapshotTableAnalysis(gridLike || dataTable, columns, directRows, reason);
+    }
+
+    private static boolean rowHasNestedDataTable(List<String> lines, int start, int end, int rowIndent) {
+        for (int i = start; i < end; i++) {
+            String line = lines.get(i);
+            int indent = indentOf(line);
+            if (indent <= rowIndent) {
+                return false;
+            }
+            java.util.regex.Matcher header = ARIA_COLLAPSIBLE_HEADER.matcher(line);
+            if (header.matches() && "table".equals(header.group(2))) {
+                int tableEnd = nestedNodeEnd(lines, i + 1, end, indent);
+                return nestedTableHasDataRow(lines, i + 1, tableEnd, indent);
+            }
+        }
+        return false;
+    }
+
+    private static int nestedNodeEnd(List<String> lines, int start, int end, int nodeIndent) {
+        int i = start;
+        while (i < end && !lines.get(i).isBlank() && indentOf(lines.get(i)) > nodeIndent) {
+            i++;
+        }
+        return i;
+    }
+
+    private static boolean nestedTableHasDataRow(List<String> lines, int start, int end, int tableIndent) {
+        int directRowIndent = Integer.MAX_VALUE;
+        for (int i = start; i < end; i++) {
+            int indent = indentOf(lines.get(i));
+            if (indent > tableIndent && ARIA_ROW.matcher(lines.get(i)).matches()) {
+                directRowIndent = Math.min(directRowIndent, indent);
+            }
+        }
+        if (directRowIndent == Integer.MAX_VALUE) {
+            return false;
+        }
+        for (int i = start; i < end; i++) {
+            if (indentOf(lines.get(i)) == directRowIndent && ARIA_ROW.matcher(lines.get(i)).matches()
+                    && directCellCount(lines, i + 1, end, directRowIndent) >= 3) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static int directCellCount(List<String> lines, int start, int end, int rowIndent) {
+        int cells = 0;
+        int cellIndent = Integer.MAX_VALUE;
+        for (int i = start; i < end; i++) {
+            int indent = indentOf(lines.get(i));
+            if (indent <= rowIndent) {
+                break;
+            }
+            if (ARIA_CELL.matcher(lines.get(i)).matches()) {
+                cellIndent = Math.min(cellIndent, indent);
+            }
+        }
+        if (cellIndent == Integer.MAX_VALUE) {
+            return 0;
+        }
+        for (int i = start; i < end; i++) {
+            int indent = indentOf(lines.get(i));
+            if (indent <= rowIndent) {
+                break;
+            }
+            if (indent == cellIndent && ARIA_CELL.matcher(lines.get(i)).matches()) {
+                cells++;
+            }
+        }
+        return cells;
     }
 
     private static String collapsedSummary(SnapshotTableAnalysis analysis) {
@@ -381,6 +513,39 @@ public class PlaywrightSessionManager {
                 : "";
         return "[" + analysis.columns().size() + " column(s): " + joined + suffix
                 + " - rows collapsed, call pageSnapshot with includeGrids=true to read rows]";
+    }
+
+    private static SnapshotCollapsedNode collapsedNode(
+            int index,
+            String kind,
+            String rawName,
+            SnapshotTableAnalysis analysis
+    ) {
+        int visibleColumns = Math.min(analysis.columns().size(), MAX_COLLAPSED_COLUMN_NAMES);
+        return new SnapshotCollapsedNode(
+                index,
+                kind,
+                normalizeSnapshotNodeName(rawName),
+                analysis.reason(),
+                analysis.directRows(),
+                analysis.columns().size(),
+                new ArrayList<>(analysis.columns().subList(0, visibleColumns)),
+                analysis.columns().size() > visibleColumns);
+    }
+
+    private static String normalizeSnapshotNodeName(String rawName) {
+        if (rawName == null || rawName.isBlank()) {
+            return null;
+        }
+        String value = rawName.trim();
+        if (value.length() >= 2 && value.charAt(0) == '"' && value.charAt(value.length() - 1) == '"') {
+            return unescapeSnapshotText(value.substring(1, value.length() - 1));
+        }
+        return value;
+    }
+
+    private static String unescapeSnapshotText(String value) {
+        return value.replace("\\\"", "\"").replace("\\\\", "\\");
     }
 
     private static void appendLine(StringBuilder out, String line) {
@@ -1090,7 +1255,10 @@ public class PlaywrightSessionManager {
         void apply(Locator locator);
     }
 
-    private record SnapshotTableAnalysis(boolean collapse, List<String> columns, int directRows) {
+    record SnapshotCollapseResult(String snapshot, SnapshotCollapseInfo info) {
+    }
+
+    private record SnapshotTableAnalysis(boolean collapse, List<String> columns, int directRows, String reason) {
     }
 
     private static final class State {

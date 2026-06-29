@@ -7,9 +7,10 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * Unified page inspection result.
  *
  * <p>{@code snapshot} is always present: a compact accessibility YAML view of the page structure with
- * grids/tables collapsed to a one-line summary. {@code controls} and {@code grids} are populated only
- * when the caller opts in via {@code includeControls} / {@code includeGrids}; otherwise they are null,
- * keeping the response small for a quick structural read.
+ * grids/tables collapsed to a one-line summary unless the caller disables collapsing. {@code collapse}
+ * explains what was collapsed. {@code controls} and {@code grids} are populated only when the caller
+ * opts in via {@code includeControls} / {@code includeGrids}; otherwise they are null, keeping the
+ * response small for a quick structural read.
  */
 @Schema(description = "Unified page inspection result containing an accessibility YAML snapshot plus controls and grid inventories when requested.")
 @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -25,6 +26,8 @@ public record PageSnapshotResult(
         @Schema(description = "Interactive controls inventory; null when includeControls was not requested.", requiredMode = Schema.RequiredMode.NOT_REQUIRED, nullable = true)
         ControlSnapshot controls,
         @Schema(description = "Structured grid/table data; null when includeGrids was not requested.", requiredMode = Schema.RequiredMode.NOT_REQUIRED, nullable = true)
-        GridSnapshot grids
+        GridSnapshot grids,
+        @Schema(description = "Metadata about data-like table/grid nodes collapsed in the snapshot string.", requiredMode = Schema.RequiredMode.REQUIRED)
+        SnapshotCollapseInfo collapse
 ) {
 }
